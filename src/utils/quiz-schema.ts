@@ -6,6 +6,11 @@ export const MAX_TOPIC_LENGTH = 60;
 /** A generated quiz is requested either for a built-in category or for a free-text topic. */
 export type QuizRequest = { categoryId: string; topic?: never } | { topic: string; categoryId?: never };
 
+// Structured Outputs supports `pattern` but not `minLength`, so patterns keep
+// strings non-empty; question and explanation must contain Hebrew letters.
+const nonEmptyText = z.string().regex(/\S/);
+const hebrewText = z.string().regex(/[א-ת]/);
+
 /**
  * The shape the model must return (Structured Outputs). It stays within the
  * JSON Schema subset OpenAI supports; stricter rules are enforced by `quizSchema`.
@@ -14,10 +19,10 @@ export const generatedQuizSchema = z.object({
   questions: z
     .array(
       z.object({
-        question: z.string(),
-        answers: z.array(z.string()).length(4),
+        question: hebrewText,
+        answers: z.array(nonEmptyText).length(4),
         correctAnswerIndex: z.number().int().min(0).max(3),
-        explanation: z.string(),
+        explanation: hebrewText,
       }),
     )
     .length(QUESTIONS_PER_QUIZ),

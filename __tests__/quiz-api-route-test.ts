@@ -12,7 +12,7 @@ jest.mock('openai', () => {
   return { __esModule: true, ...actual, default: OpenAI };
 });
 
-const { APIError } = jest.requireActual('openai');
+const { APIConnectionError, APIError } = jest.requireActual('openai');
 
 const TEST_KEY = 'sk-test-secret-key';
 
@@ -70,8 +70,19 @@ describe('POST /api/quiz', () => {
     expect(body.questions[1]).toEqual({ id: 'q2', ...generatedQuestions[1] });
 
     const params = mockParse.mock.calls[0][0];
+    expect(params.model).toBe('gpt-6-luna');
     expect(params.input).toContain('גאוגרפיה');
     expect(params.text.format).toMatchObject({ type: 'json_schema', name: 'trivia_quiz', strict: true });
+  });
+
+  test('the output schema requires Hebrew questions and explanations and non-empty answers', async () => {
+    await POST(quizRequest({ categoryId: 'geography' }));
+
+    const { schema } = mockParse.mock.calls[0][0].text.format;
+    const question = schema.properties.questions.items;
+    expect(question.properties.question.pattern).toBe('[א-ת]');
+    expect(question.properties.explanation.pattern).toBe('[א-ת]');
+    expect(question.properties.answers.items.pattern).toBe('\\S');
   });
 
   test('generates a quiz for a trimmed custom topic', async () => {
@@ -108,15 +119,41 @@ describe('POST /api/quiz', () => {
     const text = await response.text();
     expect(JSON.parse(text)).toEqual({ error: 'unavailable' });
     expect(text).not.toContain('Rate limit');
+    expect(mockParse).toHaveBeenCalledTimes(1);
   });
 
-  test('a network failure reaching OpenAI returns a generic error', async () => {
-    mockParse.mockRejectedValue(new TypeError('fetch failed'));
+  test('a network failure reaching OpenAI returns a generic error without another attempt', async () => {
+    // The SDK already retries connection errors itself.
+    mockParse.mockRejectedValue(new APIConnectionError({ message: 'Connection error.' }));
 
     const response = await POST(quizRequest({ categoryId: 'technology' }));
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
+    expect(mockParse).toHaveBeenCalledTimes(1);
+  });
+
+  test('an invalid quiz is retried once and the valid retry is returned', async () => {
+    mockParse
+      .mockResolvedValueOnce(parsedResponse([generatedQuestions[1], ...generatedQuestions.slice(1)]))
+      .mockResolvedValueOnce(parsedResponse(generatedQuestions));
+
+    const response = await POST(quizRequest({ categoryId: 'geography' }));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).questions).toHaveLength(5);
+    expect(mockParse).toHaveBeenCalledTimes(2);
+  });
+
+  test('output that fails schema parsing is retried once', async () => {
+    mockParse
+      .mockRejectedValueOnce(new SyntaxError('Unexpected end of JSON input'))
+      .mockResolvedValueOnce(parsedResponse(generatedQuestions));
+
+    const response = await POST(quizRequest({ categoryId: 'geography' }));
+
+    expect(response.status).toBe(200);
+    expect(mockParse).toHaveBeenCalledTimes(2);
   });
 
   test('a refusal is reported as refused', async () => {
@@ -130,6 +167,7 @@ describe('POST /api/quiz', () => {
 
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ error: 'refused' });
+    expect(mockParse).toHaveBeenCalledTimes(1);
   });
 
   test('a response with no parsed output is treated as malformed', async () => {
@@ -139,6 +177,7 @@ describe('POST /api/quiz', () => {
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
+    expect(mockParse).toHaveBeenCalledTimes(2);
   });
 
   test.each([
@@ -153,6 +192,8 @@ describe('POST /api/quiz', () => {
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
+    // One retry, then give up.
+    expect(mockParse).toHaveBeenCalledTimes(2);
   });
 
   test('a missing API key fails safely without calling OpenAI', async () => {
