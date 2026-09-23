@@ -1,12 +1,31 @@
 import { router } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { palette } from '@/constants/theme';
+import { accent, danger, palette } from '@/constants/theme';
 import { categories } from '@/data/categories';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { MAX_TOPIC_LENGTH } from '@/utils/quiz-schema';
 
 export default function CategoriesScreen() {
   const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
+  const [isCustomTopicOpen, setCustomTopicOpen] = useState(false);
+  const [topic, setTopic] = useState('');
+  const [topicError, setTopicError] = useState<string | null>(null);
+
+  const handleTopicChange = (value: string) => {
+    setTopic(value);
+    setTopicError(null);
+  };
+
+  const handleCreateGame = () => {
+    const trimmedTopic = topic.trim();
+    if (!trimmedTopic) {
+      setTopicError('צריך לכתוב נושא כדי ליצור משחק');
+      return;
+    }
+    router.push({ pathname: '/quiz/custom', params: { topic: trimmedTopic } });
+  };
 
   return (
     <ScrollView
@@ -38,6 +57,55 @@ export default function CategoriesScreen() {
             <Text style={[styles.optionLabel, { color: colors.title }]}>{category.name}</Text>
           </Pressable>
         ))}
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="נושא משלי"
+          accessibilityState={{ expanded: isCustomTopicOpen }}
+          onPress={() => setCustomTopicOpen((open) => !open)}
+          style={({ pressed }) => [
+            styles.option,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            pressed && styles.optionPressed,
+          ]}>
+          <Text style={styles.optionIcon}>✏️</Text>
+          <Text style={[styles.optionLabel, { color: colors.title }]}>נושא משלי</Text>
+        </Pressable>
+
+        {isCustomTopicOpen && (
+          <View style={styles.customTopic}>
+            <TextInput
+              accessibilityLabel="הנושא שלך"
+              value={topic}
+              onChangeText={handleTopicChange}
+              onSubmitEditing={handleCreateGame}
+              placeholder="למשל: חלל, מוזיקה ישראלית, כדורגל"
+              placeholderTextColor={colors.subtitle}
+              maxLength={MAX_TOPIC_LENGTH}
+              returnKeyType="go"
+              autoFocus
+              style={[
+                styles.input,
+                {
+                  color: colors.title,
+                  backgroundColor: colors.card,
+                  borderColor: topicError ? danger : colors.cardBorder,
+                },
+              ]}
+            />
+            {topicError && (
+              <Text accessibilityLiveRegion="polite" style={styles.error}>
+                {topicError}
+              </Text>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              onPress={handleCreateGame}
+              style={({ pressed }) => [styles.button, pressed && styles.optionPressed]}>
+              <Text style={styles.buttonLabel}>צור משחק</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     </ScrollView>
   );
@@ -82,6 +150,32 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     flex: 1,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  customTopic: {
+    gap: 12,
+  },
+  input: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    fontSize: 18,
+  },
+  error: {
+    color: danger,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  button: {
+    alignItems: 'center',
+    borderRadius: 16,
+    paddingVertical: 18,
+    backgroundColor: accent,
+  },
+  buttonLabel: {
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '700',
   },

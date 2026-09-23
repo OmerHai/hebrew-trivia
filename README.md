@@ -10,7 +10,13 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Add your OpenAI API key for quiz generation to `.env.local` (git-ignored). The key is read only by the `/api/quiz` API route on the server — never prefix it with `EXPO_PUBLIC_`.
+
+   ```bash
+   OPENAI_API_KEY=sk-...
+   ```
+
+3. Start the app
 
    ```bash
    npx expo start

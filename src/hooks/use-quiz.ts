@@ -18,7 +18,7 @@ export function useQuiz(questions: readonly Question[]) {
   const selectAnswer = (answerIndex: number) =>
     setState((current) => {
       if (current.selectedIndex !== null) return current;
-      const isCorrect = answerIndex === deck[current.index].correctIndex;
+      const isCorrect = answerIndex === deck[current.index].correctAnswerIndex;
       return { ...current, selectedIndex: answerIndex, score: current.score + (isCorrect ? 1 : 0) };
     });
 
