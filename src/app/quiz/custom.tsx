@@ -3,28 +3,22 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { GeneratedQuiz } from '@/components/generated-quiz';
 import { palette } from '@/constants/theme';
-import { categories } from '@/data/categories';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-export default function QuizScreen() {
-  const { categoryId } = useLocalSearchParams<{ categoryId: string }>();
+export default function CustomTopicQuizScreen() {
+  const { topic = '' } = useLocalSearchParams<{ topic?: string }>();
   const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const category = categories.find((item) => item.id === categoryId);
+  const trimmedTopic = topic.trim();
 
-  if (!category) {
+  if (!trimmedTopic) {
     return (
       <View style={[styles.empty, { backgroundColor: colors.background }]}>
-        <Text style={[styles.subtitle, { color: colors.subtitle }]}>לא מצאנו שאלות בנושא הזה</Text>
+        <Text style={[styles.subtitle, { color: colors.subtitle }]}>לא נבחר נושא למשחק</Text>
       </View>
     );
   }
 
-  return (
-    <GeneratedQuiz
-      title={`${category.icon} ${category.name}`}
-      request={{ categoryId: category.id }}
-    />
-  );
+  return <GeneratedQuiz title={`✏️ ${trimmedTopic}`} request={{ topic: trimmedTopic }} />;
 }
 
 const styles = StyleSheet.create({
