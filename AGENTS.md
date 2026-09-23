@@ -27,7 +27,7 @@ Expo ships breaking changes every SDK release. APIs you remember are likely rena
 This project uses npm (`package-lock.json`).
 
 ```bash
-npm run typecheck           # tsc --noEmit
+npm run typecheck           # regenerates Expo Router typed routes, then tsc --noEmit (don't run bare tsc)
 npm run lint                # eslint . (eslint-config-expo, flat config)
 npm test                    # jest (jest-expo preset)
 npm run test:watch          # jest --watch
