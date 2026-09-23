@@ -1,5 +1,7 @@
-import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 const palette = {
   light: { background: '#F5F7FB', title: '#12203A', subtitle: '#51607A' },
