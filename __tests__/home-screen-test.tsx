@@ -1,11 +1,18 @@
 import { render, screen } from '@testing-library/react-native';
 
-import Index from '@/app/index';
+import HomeScreen from '@/app/index';
 
-describe('<Index />', () => {
-  test('renders the placeholder home screen text', async () => {
-    await render(<Index />);
+describe('<HomeScreen />', () => {
+  test('renders the Hebrew title and subtitle', async () => {
+    await render(<HomeScreen />);
 
-    expect(screen.getByText('Edit src/app/index.tsx to edit this screen.')).toBeOnTheScreen();
+    expect(screen.getByRole('header', { name: 'טריוויה' })).toBeOnTheScreen();
+    expect(screen.getByText('בוא נראה כמה אתה באמת יודע')).toBeOnTheScreen();
+  });
+
+  test('renders the start game button', async () => {
+    await render(<HomeScreen />);
+
+    expect(screen.getByRole('button', { name: 'התחל משחק' })).toBeOnTheScreen();
   });
 });

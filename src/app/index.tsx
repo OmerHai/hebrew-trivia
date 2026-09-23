@@ -1,17 +1,69 @@
-import { Text, View, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function Index() {
+const palette = {
+  light: { background: '#F5F7FB', title: '#12203A', subtitle: '#51607A' },
+  dark: { background: '#0E1524', title: '#F2F5FA', subtitle: '#A7B3C8' },
+};
+
+export default function HomeScreen() {
+  const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
+
   return (
-    <View style={styles.container}>
-      <Text>Edit src/app/index.tsx to edit this screen.</Text>
-    </View>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.hero}>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.title }]}>
+          טריוויה
+        </Text>
+        <Text style={[styles.subtitle, { color: colors.subtitle }]}>בוא נראה כמה אתה באמת יודע</Text>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+        <Text style={styles.buttonLabel}>התחל משחק</Text>
+      </Pressable>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+  },
+  hero: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  title: {
+    fontSize: 48,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 18,
+    lineHeight: 26,
+    textAlign: 'center',
+  },
+  button: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    borderRadius: 16,
+    paddingVertical: 18,
+    backgroundColor: '#208AEF',
+  },
+  buttonPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  buttonLabel: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
   },
 });
