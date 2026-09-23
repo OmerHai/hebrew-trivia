@@ -1,12 +1,9 @@
+import { Link } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { accent, palette } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-
-const palette = {
-  light: { background: '#F5F7FB', title: '#12203A', subtitle: '#51607A' },
-  dark: { background: '#0E1524', title: '#F2F5FA', subtitle: '#A7B3C8' },
-};
 
 export default function HomeScreen() {
   const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
@@ -20,11 +17,14 @@ export default function HomeScreen() {
         <Text style={[styles.subtitle, { color: colors.subtitle }]}>בוא נראה כמה אתה באמת יודע</Text>
       </View>
 
-      <Pressable
-        accessibilityRole="button"
-        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
-        <Text style={styles.buttonLabel}>התחל משחק</Text>
-      </Pressable>
+      <Link href="/categories" asChild>
+        {/* Link sets role="link"; keep button semantics for screen readers. */}
+        <Pressable
+          role="button"
+          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+          <Text style={styles.buttonLabel}>התחל משחק</Text>
+        </Pressable>
+      </Link>
     </SafeAreaView>
   );
 }
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 16,
     paddingVertical: 18,
-    backgroundColor: '#208AEF',
+    backgroundColor: accent,
   },
   buttonPressed: {
     opacity: 0.85,
