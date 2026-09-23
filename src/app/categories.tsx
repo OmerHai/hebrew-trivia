@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { palette } from '@/constants/theme';
@@ -25,6 +26,9 @@ export default function CategoriesScreen() {
             key={category.id}
             accessibilityRole="button"
             accessibilityLabel={category.name}
+            onPress={() =>
+              router.push({ pathname: '/quiz/[categoryId]', params: { categoryId: category.id } })
+            }
             style={({ pressed }) => [
               styles.option,
               { backgroundColor: colors.card, borderColor: colors.cardBorder },
