@@ -78,39 +78,53 @@ npm test
 
 ## Git workflow
 
-- Do not implement features or fixes directly on `main`.
-- Start work from an up-to-date `main` (`git checkout main && git pull`).
-- Use a dedicated branch: `feature/<short-name>`, `fix/<short-name>`, `chore/<short-name>` or `refactor/<short-name>`.
+The user describes the task; the agent handles the Git workflow below without being asked. Do not wait for explicit instructions to create branches, commit, push or open pull requests.
+
+General rules:
+
+- Never implement task changes directly on `main` unless the user explicitly requests an exception.
+- Branch names: `feature/<short-name>`, `fix/<short-name>`, `chore/<short-name>` or `refactor/<short-name>`, chosen by the kind of work.
 - Keep commits focused. Never mix unrelated changes into a commit.
 - Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `chore:`, `refactor:`, `test:`, `docs:` …
 - Preserve the existing Git identity. Never modify `git user.name` or `user.email` and never pass `--author`.
 - Do not add AI attribution (such as `Co-Authored-By` trailers) to commits or pull requests.
-- Push feature branches to `origin`.
 - Never force-push unless explicitly requested.
 
-## Pull requests and review
+### Task start
 
-Before a branch is ready to merge:
+When the user asks for a new feature, fix, chore or refactor:
 
-1. Review the full branch diff against `main`.
-2. Look for bugs, regressions, unnecessary complexity and missing tests.
-3. Fix relevant findings.
-4. Rerun all required checks.
-5. Push the final branch.
+1. Inspect `git status` and the current branch before editing.
+2. If the working tree is not clean, do not discard or overwrite existing work. Resolve it or ask the user before continuing.
+3. If on a branch that clearly belongs to the requested task, keep using it.
+4. If on `main`, pull the latest `origin/main`, then create and switch to a new task branch with the appropriate prefix.
+5. If on an unrelated branch, ask the user before switching.
 
-Merging into `main` requires explicit user approval.
+### Task completion
 
-## After merge
+When the implementation is done:
 
-After a branch has been confirmed merged into `main`:
+1. Add or update relevant tests.
+2. Run all required checks: `npm run typecheck`, `npm run lint`, `npm test`.
+3. Review the full branch diff against `main` for bugs, regressions, unnecessary complexity and missing tests.
+4. Fix relevant findings and rerun the checks.
+5. Create focused Conventional Commit(s).
+6. Push the task branch to `origin`.
+7. Open a pull request into `main` using the available GitHub integration or CLI (prefer `gh` when available), with a concise summary and a validation section listing the checks run.
+8. Stop and wait. Merging into `main` requires explicit user approval.
 
-1. `git checkout main`
-2. Pull the latest `origin/main`.
-3. Verify the merged work is present.
-4. Delete the local feature branch.
-5. Delete the remote feature branch if it still exists.
-6. `git fetch --prune`
-7. Verify the working tree is clean.
+### After approved merge
+
+Only after the user explicitly approves the merge:
+
+1. Squash-merge the pull request, unless the user explicitly requests another merge strategy.
+2. `git checkout main`
+3. Pull the latest `origin/main`.
+4. Verify the merged work is present.
+5. Delete the local task branch.
+6. Delete the remote task branch if it still exists.
+7. `git fetch --prune`
+8. Verify the working tree is clean.
 
 Never delete a branch before verifying that its work has been merged.
 
