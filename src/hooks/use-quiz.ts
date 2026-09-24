@@ -6,6 +6,8 @@ type QuizState = {
   index: number;
   score: number;
   selectedIndex: number | null;
+  /** Whether each answered question was answered correctly, in order. */
+  results: boolean[];
 };
 
 /**
@@ -14,7 +16,7 @@ type QuizState = {
  * has reached a question that hasn't arrived yet.
  */
 export function useQuiz(questions: readonly Question[], total = questions.length) {
-  const [state, setState] = useState<QuizState>({ index: 0, score: 0, selectedIndex: null });
+  const [state, setState] = useState<QuizState>({ index: 0, score: 0, selectedIndex: null, results: [] });
   const question: Question | undefined = questions[state.index];
 
   // Functional updates so a rapid double tap can't answer twice or skip a question.
@@ -23,7 +25,12 @@ export function useQuiz(questions: readonly Question[], total = questions.length
       const answered = questions[current.index];
       if (current.selectedIndex !== null || !answered) return current;
       const isCorrect = answerIndex === answered.correctAnswerIndex;
-      return { ...current, selectedIndex: answerIndex, score: current.score + (isCorrect ? 1 : 0) };
+      return {
+        ...current,
+        selectedIndex: answerIndex,
+        score: current.score + (isCorrect ? 1 : 0),
+        results: [...current.results, isCorrect],
+      };
     });
 
   const nextQuestion = () =>
@@ -34,9 +41,11 @@ export function useQuiz(questions: readonly Question[], total = questions.length
 
   return {
     question,
+    questionIndex: state.index,
     questionNumber: state.index + 1,
     total,
     score: state.score,
+    results: state.results,
     selectedIndex: state.selectedIndex,
     isAnswered: state.selectedIndex !== null,
     isLastQuestion: state.index === total - 1,

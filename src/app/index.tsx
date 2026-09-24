@@ -1,71 +1,65 @@
-import { Link } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import { View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { accent, palette } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ActionBar } from '@/components/action-bar';
+import { Button } from '@/components/button';
+import { LogoMark } from '@/components/logo-mark';
+import { ThemedText } from '@/components/themed-text';
+import { categories } from '@/data/categories';
+import { layout, radius, spacing, useTheme } from '@/theme';
+
+// A finished game in miniature: the same track the quiz and results use.
+const SAMPLE_TRACK = [true, true, false, true, true, true, false, true, true, true];
 
 export default function HomeScreen() {
-  const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.hero}>
-        <Text accessibilityRole="header" style={[styles.title, { color: colors.title }]}>
-          טריוויה
-        </Text>
-        <Text style={[styles.subtitle, { color: colors.subtitle }]}>בוא נראה כמה אתה באמת יודע</Text>
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: spacing.xxl,
+          paddingHorizontal: layout.gutter,
+        }}>
+        <LogoMark />
+        <View style={{ alignItems: 'center', gap: spacing.sm }}>
+          <ThemedText variant="display" accessibilityRole="header" style={{ textAlign: 'center' }}>
+            טריוויה
+          </ThemedText>
+          <ThemedText variant="headline" tone="secondary" style={{ textAlign: 'center' }}>
+            עשר שאלות. נושא אחד. כמה תדעו?
+          </ThemedText>
+        </View>
+        <View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ flexDirection: 'row', gap: spacing.sm }}>
+          {SAMPLE_TRACK.map((correct, index) => (
+            <View
+              key={index}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: radius.full,
+                backgroundColor: correct ? colors.success : colors.danger,
+                opacity: 0.85,
+              }}
+            />
+          ))}
+        </View>
       </View>
 
-      <Link href="/categories" asChild>
-        {/* Link sets role="link"; keep button semantics for screen readers. */}
-        <Pressable
-          role="button"
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
-          <Text style={styles.buttonLabel}>התחל משחק</Text>
-        </Pressable>
-      </Link>
-    </SafeAreaView>
+      <ActionBar divider={false}>
+        <Button title="בואו נשחק" onPress={() => router.push('/categories')} />
+        <ThemedText variant="caption" tone="secondary" style={{ textAlign: 'center' }}>
+          {`${categories.length} נושאים · שאלות חדשות בכל סיבוב`}
+        </ThemedText>
+      </ActionBar>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingBottom: 32,
-  },
-  hero: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  title: {
-    fontSize: 48,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 18,
-    lineHeight: 26,
-    textAlign: 'center',
-  },
-  button: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    borderRadius: 16,
-    paddingVertical: 18,
-    backgroundColor: accent,
-  },
-  buttonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
-  },
-  buttonLabel: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '700',
-  },
-});

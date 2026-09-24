@@ -56,10 +56,10 @@ describe('navigation', () => {
     const router = renderRouter({ _layout: RootLayout, index: HomeScreen, categories: CategoriesScreen });
     await router;
 
-    await fireEvent.press(screen.getByRole('button', { name: 'התחל משחק' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'בואו נשחק' }));
 
     expect(router.getPathname()).toBe('/categories');
-    expect(await screen.findByRole('header', { name: 'בחר נושא' })).toBeOnTheScreen();
+    expect(await screen.findAllByRole('button')).toHaveLength(16);
   });
 
   test.each(categories)('selecting $name starts a freshly generated quiz for $id', async (category) => {
@@ -69,8 +69,7 @@ describe('navigation', () => {
     await fireEvent.press(screen.getByRole('button', { name: category.name }));
 
     expect(router.getPathname()).toBe(`/quiz/${category.id}`);
-    expect(await screen.findByText(`${category.emoji} ${category.name}`)).toBeOnTheScreen();
-    expect(screen.getByText('שאלה 1 מתוך 10')).toBeOnTheScreen();
+    expect(await screen.findByRole('progressbar', { name: 'שאלה 1 מתוך 10, 0 תשובות נכונות' })).toBeOnTheScreen();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/quiz');
     // Only the stable id is sent; the server looks up the generation context.
     expect(requestBody()).toEqual({ categoryId: category.id, count: 3, exclude: [] });
@@ -81,7 +80,7 @@ describe('navigation', () => {
 
     await act(async () => appRouter.push('/quiz/custom?topic=חלל'));
 
-    expect(await screen.findByText('לא מצאנו שאלות בנושא הזה')).toBeOnTheScreen();
+    expect(await screen.findByRole('header', { name: 'לא מצאנו את הנושא הזה' })).toBeOnTheScreen();
     expect(screen.queryByText(/חלל/)).not.toBeOnTheScreen();
     expect(fetchMock).not.toHaveBeenCalled();
   });
