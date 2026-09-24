@@ -46,6 +46,7 @@ src/
   app/         # Expo Router routes only: screens and _layout.tsx files
   components/  # reusable UI components
   hooks/       # custom React hooks
+  storage/     # on-device persistence (e.g. played-question history)
   data/        # static content, e.g. the Hebrew question bank
   types/       # shared TypeScript types (e.g. Question)
   utils/       # pure helper functions (shuffling, scoring, …)
