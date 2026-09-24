@@ -1,5 +1,11 @@
-import { categories } from '@/data/categories';
-import { generateQuizBatch, QuizGenerationError, type QuizBatchOptions } from '@/server/quiz-generator';
+import { findCategory } from '@/data/categories';
+import { categoryGenerationContexts, reasoningEffortFor } from '@/server/category-prompts';
+import {
+  generateQuizBatch,
+  QuizGenerationError,
+  type QuizBatchOptions,
+  type QuizSubject,
+} from '@/server/quiz-generator';
 import {
   MAX_EXCLUDED_QUESTION_LENGTH,
   MAX_EXCLUDED_QUESTIONS,
@@ -11,7 +17,9 @@ const STATUS_BY_FAILURE = { refused: 422, unavailable: 502, misconfigured: 500 }
 
 /**
  * POST /api/quiz with `{ categoryId }` or `{ topic }`, plus `count` (questions
- * to generate) and `exclude` (questions that must not repeat).
+ * to generate) and `exclude` (questions that must not repeat). The app only
+ * sends a category id; its generation context is looked up here and never
+ * taken from the request. Free-text topics are not offered in the app for now.
  * Responds with `{ questions }`, or `{ error }` holding a short error code — never raw details.
  */
 export async function POST(request: Request) {
@@ -38,8 +46,8 @@ async function readOptions(request: Request): Promise<QuizBatchOptions | null> {
   }
   if (typeof body !== 'object' || body === null) return null;
 
-  const topic = readTopic(body);
-  if (!topic) return null;
+  const subject = readSubject(body);
+  if (!subject) return null;
 
   const count = 'count' in body ? body.count : undefined;
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > QUESTIONS_PER_QUIZ) {
@@ -55,16 +63,23 @@ async function readOptions(request: Request): Promise<QuizBatchOptions | null> {
     return null;
   }
 
-  return { topic, count, exclude: (exclude as string[]).map((item) => item.trim()).filter(Boolean) };
+  return { subject, count, exclude: (exclude as string[]).map((item) => item.trim()).filter(Boolean) };
 }
 
-function readTopic(body: object): string | null {
+function readSubject(body: object): QuizSubject | null {
   if ('categoryId' in body) {
-    return categories.find((category) => category.id === body.categoryId)?.name ?? null;
+    const category = findCategory(body.categoryId);
+    if (!category) return null;
+    return {
+      categoryId: category.id,
+      name: category.name,
+      generationContext: categoryGenerationContexts[category.id],
+      reasoningEffort: reasoningEffortFor(category.id),
+    };
   }
   if ('topic' in body && typeof body.topic === 'string') {
     const topic = body.topic.trim();
-    return topic && topic.length <= MAX_TOPIC_LENGTH ? topic : null;
+    return topic && topic.length <= MAX_TOPIC_LENGTH ? { topic } : null;
   }
   return null;
 }

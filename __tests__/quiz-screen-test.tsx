@@ -3,7 +3,6 @@ import { act, cleanup, fireEvent, renderRouter, screen, waitFor } from 'expo-rou
 
 import HomeScreen from '@/app/index';
 import QuizScreen from '@/app/quiz/[categoryId]';
-import CustomTopicQuizScreen from '@/app/quiz/custom';
 import ResultsScreen from '@/app/results';
 import RootLayout from '@/app/_layout';
 import { getRecentQuestions } from '@/storage/question-history';
@@ -146,7 +145,6 @@ function renderQuiz(initialUrl = '/quiz/geography') {
       _layout: RootLayout,
       index: HomeScreen,
       'quiz/[categoryId]': QuizScreen,
-      'quiz/custom': CustomTopicQuizScreen,
       results: ResultsScreen,
     },
     { initialUrl },
@@ -322,10 +320,10 @@ describe('<QuizScreen /> generation', () => {
     expect(screen.getByRole('button', { name: 'נסה שוב' })).toBeOnTheScreen();
   });
 
-  test('a refused topic suggests trying another topic', async () => {
+  test('a refused request suggests trying another topic', async () => {
     fetchMock.mockResolvedValue(jsonResponse(422, { error: 'refused' }));
 
-    await renderQuiz('/quiz/custom?topic=משהו');
+    await renderQuiz();
 
     expect(
       await screen.findByText('לא הצלחנו ליצור שאלות על הנושא הזה. אפשר לנסות שוב או לבחור נושא אחר.'),
@@ -338,6 +336,10 @@ describe('<QuizScreen /> generation', () => {
     ['three answers', { questions: [{ ...firstBatch[0], answers: ['א', 'ב', 'ג'] }, ...firstBatch.slice(1)] }],
     ['an out-of-range correct answer', { questions: [{ ...firstBatch[0], correctAnswerIndex: 4 }, ...firstBatch.slice(1)] }],
     ['a missing explanation', { questions: [{ ...firstBatch[0], explanation: '' }, ...firstBatch.slice(1)] }],
+    [
+      'a question containing its answer',
+      { questions: [{ ...firstBatch[0], question: 'האם קנברה היא בירת אוסטרליה?' }, ...firstBatch.slice(1)] },
+    ],
     ['not a quiz at all', { message: 'hello' }],
   ])('a malformed response (%s) shows the retry state', async (_case, body) => {
     fetchMock.mockResolvedValue(jsonResponse(200, body));
@@ -346,13 +348,6 @@ describe('<QuizScreen /> generation', () => {
 
     expect(await screen.findByRole('button', { name: 'נסה שוב' })).toBeOnTheScreen();
     expect(screen.queryByText('שאלה 1 מתוך 10')).not.toBeOnTheScreen();
-  });
-
-  test('a custom topic uses the same API with the topic', async () => {
-    await renderQuiz('/quiz/custom?topic=%D7%97%D7%9C%D7%9C');
-
-    expect(await screen.findByText('✏️ חלל')).toBeOnTheScreen();
-    expect(requestBody(0)).toEqual({ topic: 'חלל', count: 3, exclude: [] });
   });
 
   test('shows a message for an unknown category without calling the API', async () => {
@@ -404,15 +399,15 @@ describe('<QuizScreen /> played-question history', () => {
     expect(requestBody(0)).toEqual({ categoryId: 'technology', count: 3, exclude: [] });
   });
 
-  test('a custom topic finds the history of the same topic written differently', async () => {
-    await renderLoadedQuiz('/quiz/custom?topic=%D7%97%D7%9C%D7%9C');
-    await playAnotherGame(`/quiz/custom?topic=${encodeURIComponent(' חלל! ')}`, 'topic:חלל');
+  test('football and sports keep separate histories', async () => {
+    await renderLoadedQuiz('/quiz/football');
+    await playAnotherGame('/quiz/sports', 'category:football');
 
-    expect(requestBody(0)).toEqual({
-      topic: 'חלל!',
-      count: 3,
-      exclude: geography.map((question) => question.question).reverse(),
-    });
+    expect(requestBody(0)).toEqual({ categoryId: 'sports', count: 3, exclude: [] });
+    expect(await recentQuestions('category:sports')).toHaveLength(10);
+    expect(await recentQuestions('category:football')).toEqual(
+      geography.map((question) => question.question).reverse(),
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { categories } from '@/data/categories';
 import {
   addPlayedQuestions,
   getRecentQuestions,
@@ -51,22 +52,27 @@ describe('question history', () => {
   });
 
   test('category histories are kept separate', async () => {
-    await addPlayedQuestions(historyScope({ categoryId: 'geography' }), ['מהי בירת צרפת?']);
-    await addPlayedQuestions(historyScope({ categoryId: 'technology' }), ['מי ייסד את מיקרוסופט?']);
+    await addPlayedQuestions(historyScope('geography'), ['מהי בירת צרפת?']);
+    await addPlayedQuestions(historyScope('technology'), ['מי ייסד את מיקרוסופט?']);
 
-    expect(await getRecentQuestions(historyScope({ categoryId: 'geography' }))).toEqual(['מהי בירת צרפת?']);
-    expect(await getRecentQuestions(historyScope({ categoryId: 'technology' }))).toEqual(['מי ייסד את מיקרוסופט?']);
+    expect(await getRecentQuestions(historyScope('geography'))).toEqual(['מהי בירת צרפת?']);
+    expect(await getRecentQuestions(historyScope('technology'))).toEqual(['מי ייסד את מיקרוסופט?']);
   });
 
-  test('custom topics share history by their normalized topic', async () => {
-    await addPlayedQuestions(historyScope({ topic: 'מוזיקה ישראלית!' }), ['מי שר את "ירושלים של זהב"?']);
+  test('every category has its own history scope, keyed by its stable id', () => {
+    const scopes = categories.map((category) => historyScope(category.id));
 
-    expect(historyScope({ topic: '  מוזיקה   ישראלית ' })).toBe(historyScope({ topic: 'מוזיקה ישראלית!' }));
-    expect(await getRecentQuestions(historyScope({ topic: 'מוזיקה ישראלית' }))).toEqual([
-      'מי שר את "ירושלים של זהב"?',
-    ]);
-    expect(await getRecentQuestions(historyScope({ topic: 'חלל' }))).toEqual([]);
-    expect(historyScope({ topic: 'geography' })).not.toBe(historyScope({ categoryId: 'geography' }));
+    expect(new Set(scopes).size).toBe(categories.length);
+    expect(historyScope('football')).toBe('category:football');
+  });
+
+  test('neighbouring categories such as football and sports do not share history', async () => {
+    await addPlayedQuestions(historyScope('football'), ['מי זכתה במונדיאל 2018?']);
+    await addPlayedQuestions(historyScope('sports'), ['כמה שחקנים יש בקבוצת כדורסל על המגרש?']);
+
+    expect(await getRecentQuestions(historyScope('football'))).toEqual(['מי זכתה במונדיאל 2018?']);
+    expect(await getRecentQuestions(historyScope('sports'))).toEqual(['כמה שחקנים יש בקבוצת כדורסל על המגרש?']);
+    expect(await getRecentQuestions(historyScope('logic-puzzles'))).toEqual([]);
   });
 
   test('a question played again moves to the front instead of being stored twice', async () => {

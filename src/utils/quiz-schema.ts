@@ -1,23 +1,22 @@
 import { z } from 'zod';
 
-import { normalizeText } from '@/utils/question-text';
+import { normalizeText, revealsAnswer } from '@/utils/question-text';
 
 export const QUESTIONS_PER_QUIZ = 10;
 /** The game starts as soon as this many questions are ready; the rest arrive in the background. */
 export const FIRST_BATCH_SIZE = 3;
+/** Longest free-text topic the API accepts. The app itself only offers predefined categories. */
 export const MAX_TOPIC_LENGTH = 60;
 /** Upper bounds for the exclusion list sent with a request, to keep prompts small. */
 export const MAX_EXCLUDED_QUESTIONS = 40;
 export const MAX_EXCLUDED_QUESTION_LENGTH = 300;
 
-/** A generated quiz is requested either for a built-in category or for a free-text topic. */
-export type QuizRequest = { categoryId: string; topic?: never } | { topic: string; categoryId?: never };
-
 /**
- * One generation request: `count` new questions that must not repeat any of the
- * `exclude` questions (recently played ones and those already in this game).
+ * One generation request from the app: `count` new questions for a predefined
+ * category that must not repeat any of the `exclude` questions (recently played
+ * ones and those already in this game).
  */
-export type QuizBatchRequest = QuizRequest & { count: number; exclude: string[] };
+export type QuizBatchRequest = { categoryId: string; count: number; exclude: string[] };
 
 // Structured Outputs supports `pattern` but not `minLength`, so patterns keep
 // strings non-empty; question and explanation must contain Hebrew letters.
@@ -56,6 +55,9 @@ const questionSchema = z
   })
   .refine((question) => new Set(question.answers).size === question.answers.length, {
     message: 'Answers must be distinct',
+  })
+  .refine((question) => !revealsAnswer(question.question, question.answers[question.correctAnswerIndex]), {
+    message: 'The question must not contain its correct answer',
   });
 
 /**
