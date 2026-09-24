@@ -1,24 +1,23 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { normalizeText } from '@/utils/question-text';
-import type { QuizRequest } from '@/utils/quiz-schema';
 
 const STORAGE_KEY = 'played-questions/v1';
-/** How many played questions are kept on the device, across all categories and topics. */
+/** How many played questions are kept on the device, across all categories. */
 export const MAX_HISTORY_SIZE = 100;
-/** How many recent questions of the same category or topic are sent as exclusions. */
+/** How many recent questions of the same category are sent as exclusions. */
 export const RELEVANT_HISTORY_SIZE = 30;
 
 /** A played question. Only the question text is kept — no answers, scores or secrets. */
 type HistoryEntry = {
-  /** The category or custom topic the question was played in; see `historyScope`. */
+  /** The category the question was played in; see `historyScope`. */
   scope: string;
   question: string;
 };
 
-/** Identifies which history is relevant to a request: per category, or per normalized custom topic. */
-export function historyScope(request: QuizRequest): string {
-  return request.categoryId !== undefined ? `category:${request.categoryId}` : `topic:${normalizeText(request.topic)}`;
+/** Identifies the history relevant to a game: each category, by its stable id, has its own. */
+export function historyScope(categoryId: string): string {
+  return `category:${categoryId}`;
 }
 
 async function readHistory(): Promise<HistoryEntry[]> {

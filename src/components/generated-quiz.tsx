@@ -8,7 +8,6 @@ import { useGeneratedQuiz } from '@/hooks/use-generated-quiz';
 import { useQuiz } from '@/hooks/use-quiz';
 import type { Question } from '@/types/question';
 import type { QuizErrorKind } from '@/utils/quiz-api';
-import type { QuizRequest } from '@/utils/quiz-schema';
 
 const ERROR_MESSAGES: Record<QuizErrorKind, string> = {
   network: 'לא הצלחנו להתחבר. כדאי לבדוק את החיבור לאינטרנט ולנסות שוב.',
@@ -17,15 +16,15 @@ const ERROR_MESSAGES: Record<QuizErrorKind, string> = {
 };
 
 type Props = {
-  /** Heading shown above the quiz, e.g. the category icon and name. */
+  /** Heading shown above the quiz, e.g. the category emoji and name. */
   title: string;
-  request: QuizRequest;
+  categoryId: string;
 };
 
-/** Requests a freshly generated quiz and lets the player play it. */
-export function GeneratedQuiz({ title, request }: Props) {
+/** Requests a freshly generated quiz for the category and lets the player play it. */
+export function GeneratedQuiz({ title, categoryId }: Props) {
   const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const quiz = useGeneratedQuiz(request);
+  const quiz = useGeneratedQuiz(categoryId);
 
   if (quiz.status === 'loading') {
     return (

@@ -3,13 +3,13 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { GeneratedQuiz } from '@/components/generated-quiz';
 import { palette } from '@/constants/theme';
-import { categories } from '@/data/categories';
+import { findCategory } from '@/data/categories';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function QuizScreen() {
   const { categoryId } = useLocalSearchParams<{ categoryId: string }>();
   const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const category = categories.find((item) => item.id === categoryId);
+  const category = findCategory(categoryId);
 
   if (!category) {
     return (
@@ -19,12 +19,7 @@ export default function QuizScreen() {
     );
   }
 
-  return (
-    <GeneratedQuiz
-      title={`${category.icon} ${category.name}`}
-      request={{ categoryId: category.id }}
-    />
-  );
+  return <GeneratedQuiz title={`${category.emoji} ${category.name}`} categoryId={category.id} />;
 }
 
 const styles = StyleSheet.create({

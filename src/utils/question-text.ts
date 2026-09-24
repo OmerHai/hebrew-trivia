@@ -1,5 +1,5 @@
 /**
- * Normalizes free text (a question or a custom topic) for duplicate checks:
+ * Normalizes free text (e.g. a question) for duplicate checks:
  * ignores case, Hebrew vowel marks, punctuation, symbols and extra whitespace.
  */
 export function normalizeText(text: string): string {

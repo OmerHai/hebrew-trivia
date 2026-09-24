@@ -1,10 +1,11 @@
-import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { router as appRouter } from 'expo-router';
+import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import CategoriesScreen from '@/app/categories';
 import HomeScreen from '@/app/index';
 import QuizScreen from '@/app/quiz/[categoryId]';
-import CustomTopicQuizScreen from '@/app/quiz/custom';
 import RootLayout from '@/app/_layout';
+import { categories } from '@/data/categories';
 import type { Question } from '@/types/question';
 
 const questions: Question[] = Array.from({ length: 10 }, (_, index) => ({
@@ -39,7 +40,6 @@ function renderFromCategories() {
       index: HomeScreen,
       categories: CategoriesScreen,
       'quiz/[categoryId]': QuizScreen,
-      'quiz/custom': CustomTopicQuizScreen,
     },
     { initialUrl: '/categories' },
   );
@@ -62,56 +62,27 @@ describe('navigation', () => {
     expect(await screen.findByRole('header', { name: 'בחר נושא' })).toBeOnTheScreen();
   });
 
-  test('selecting a category starts a freshly generated quiz for that category', async () => {
+  test.each(categories)('selecting $name starts a freshly generated quiz for $id', async (category) => {
     const router = renderFromCategories();
     await router;
 
-    await fireEvent.press(screen.getByRole('button', { name: 'טכנולוגיה' }));
+    await fireEvent.press(screen.getByRole('button', { name: category.name }));
 
-    expect(router.getPathname()).toBe('/quiz/technology');
-    expect(await screen.findByText('💻 טכנולוגיה')).toBeOnTheScreen();
+    expect(router.getPathname()).toBe(`/quiz/${category.id}`);
+    expect(await screen.findByText(`${category.emoji} ${category.name}`)).toBeOnTheScreen();
     expect(screen.getByText('שאלה 1 מתוך 10')).toBeOnTheScreen();
-    expect(requestBody()).toEqual({ categoryId: 'technology', count: 3, exclude: [] });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/quiz');
+    // Only the stable id is sent; the server looks up the generation context.
+    expect(requestBody()).toEqual({ categoryId: category.id, count: 3, exclude: [] });
   });
 
-  test('a custom topic starts a generated quiz on that topic', async () => {
-    const router = renderFromCategories();
-    await router;
-
-    await fireEvent.press(screen.getByRole('button', { name: 'נושא משלי' }));
-    await fireEvent.changeText(screen.getByLabelText('הנושא שלך'), '  מוזיקה ישראלית  ');
-    await fireEvent.press(screen.getByRole('button', { name: 'צור משחק' }));
-
-    expect(router.getPathname()).toBe('/quiz/custom');
-    expect(await screen.findByText('✏️ מוזיקה ישראלית')).toBeOnTheScreen();
-    expect(requestBody()).toEqual({ topic: 'מוזיקה ישראלית', count: 3, exclude: [] });
-  });
-
-  test.each([
-    ['empty', ''],
-    ['whitespace-only', '   '],
-  ])('an %s custom topic is rejected with a Hebrew message', async (_case, topic) => {
-    const router = renderFromCategories();
-    await router;
-
-    await fireEvent.press(screen.getByRole('button', { name: 'נושא משלי' }));
-    await fireEvent.changeText(screen.getByLabelText('הנושא שלך'), topic);
-    await fireEvent.press(screen.getByRole('button', { name: 'צור משחק' }));
-
-    expect(screen.getByText('צריך לכתוב נושא כדי ליצור משחק')).toBeOnTheScreen();
-    expect(router.getPathname()).toBe('/categories');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  test('typing after a validation error clears the message', async () => {
+  test('the old custom topic route no longer starts a quiz', async () => {
     await renderFromCategories();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'נושא משלי' }));
-    await fireEvent.press(screen.getByRole('button', { name: 'צור משחק' }));
-    expect(screen.getByText('צריך לכתוב נושא כדי ליצור משחק')).toBeOnTheScreen();
+    await act(async () => appRouter.push('/quiz/custom?topic=חלל'));
 
-    await fireEvent.changeText(screen.getByLabelText('הנושא שלך'), 'חלל');
-
-    expect(screen.queryByText('צריך לכתוב נושא כדי ליצור משחק')).not.toBeOnTheScreen();
+    expect(await screen.findByText('לא מצאנו שאלות בנושא הזה')).toBeOnTheScreen();
+    expect(screen.queryByText(/חלל/)).not.toBeOnTheScreen();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

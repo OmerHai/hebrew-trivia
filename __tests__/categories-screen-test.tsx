@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { render, screen } from '@testing-library/react-native';
 import * as ReactNative from 'react-native';
 
 import CategoriesScreen from '@/app/categories';
+import { categories } from '@/data/categories';
 
 describe('<CategoriesScreen />', () => {
   afterEach(() => {
@@ -14,23 +15,31 @@ describe('<CategoriesScreen />', () => {
     expect(screen.getByRole('header', { name: 'בחר נושא' })).toBeOnTheScreen();
   });
 
-  test('renders every category and the custom topic option as buttons, in order', async () => {
+  test('renders all 17 predefined categories as buttons, in order', async () => {
     await render(<CategoriesScreen />);
 
     const names = screen.getAllByRole('button').map((button) => button.props.accessibilityLabel);
 
-    expect(names).toEqual(['ידע כללי', 'גאוגרפיה', 'קולנוע וטלוויזיה', 'טכנולוגיה', 'נושא משלי']);
+    expect(names).toHaveLength(17);
+    expect(names).toEqual(categories.map((category) => category.name));
   });
 
-  test('the custom topic form is hidden until the option is chosen', async () => {
+  test('each category shows its emoji next to its Hebrew name', async () => {
     await render(<CategoriesScreen />);
 
+    for (const category of categories) {
+      expect(screen.getByText(category.emoji)).toBeOnTheScreen();
+      expect(screen.getByText(category.name)).toBeOnTheScreen();
+    }
+  });
+
+  test('the custom topic option is no longer offered', async () => {
+    await render(<CategoriesScreen />);
+
+    expect(screen.queryByRole('button', { name: 'נושא משלי' })).not.toBeOnTheScreen();
+    expect(screen.queryByText('נושא משלי')).not.toBeOnTheScreen();
     expect(screen.queryByLabelText('הנושא שלך')).not.toBeOnTheScreen();
-
-    await fireEvent.press(screen.getByRole('button', { name: 'נושא משלי' }));
-
-    expect(screen.getByLabelText('הנושא שלך')).toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'צור משחק' })).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'צור משחק' })).not.toBeOnTheScreen();
   });
 
   test('uses light text on the dark color scheme', async () => {
