@@ -1,5 +1,9 @@
 import { categories, findCategory } from '@/data/categories';
-import { categoryGenerationContexts } from '@/server/category-prompts';
+import {
+  categoryGenerationContexts,
+  categoryReasoningEfforts,
+  reasoningEffortFor,
+} from '@/server/category-prompts';
 
 const EXPECTED_CATEGORIES = [
   ['general-knowledge', 'ידע כללי'],
@@ -90,6 +94,12 @@ describe('category generation contexts', () => {
     }
   });
 
+  test.each(['israeli-culture', 'tv-series'] as const)('%s asks for high-confidence facts only', (id) => {
+    expect(categoryGenerationContexts[id]).toMatch(/Prefer well-known, high-confidence facts/);
+    expect(categoryGenerationContexts[id]).toMatch(/skip anything you are unsure of/);
+    expect(categoryGenerationContexts[id]).toMatch(/Never invent awards, credits, creators, performers or historical facts/);
+  });
+
   test('logic puzzles must be self-contained, unambiguous and explained step by step', () => {
     const context = categoryGenerationContexts['logic-puzzles'];
 
@@ -98,5 +108,21 @@ describe('category generation contexts', () => {
     expect(context).toMatch(/Avoid ambiguous wording/);
     expect(context).toMatch(/cultural assumptions/);
     expect(context).toMatch(/explanation briefly shows the reasoning/);
+  });
+});
+
+describe('category reasoning effort', () => {
+  test('only Israeli culture and TV series get more reasoning', () => {
+    expect(categoryReasoningEfforts).toEqual({ 'israeli-culture': 'low', 'tv-series': 'low' });
+  });
+
+  test('every other category, including logic puzzles, uses none', () => {
+    const others = categories.filter((category) => !['israeli-culture', 'tv-series'].includes(category.id));
+
+    expect(others).toHaveLength(15);
+    for (const category of others) expect(reasoningEffortFor(category.id)).toBe('none');
+    expect(reasoningEffortFor('logic-puzzles')).toBe('none');
+    expect(reasoningEffortFor('israeli-culture')).toBe('low');
+    expect(reasoningEffortFor('tv-series')).toBe('low');
   });
 });

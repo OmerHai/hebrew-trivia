@@ -2,7 +2,9 @@
 // reaches the client bundle. Do not import this file from screens or components.
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
+import type { ReasoningEffort } from 'openai/resources/shared';
 
+import { DEFAULT_REASONING_EFFORT } from '@/server/category-prompts';
 import type { Question } from '@/types/question';
 import { generatedQuizSchema, quizBatchSchema } from '@/utils/quiz-schema';
 
@@ -15,9 +17,11 @@ const INSTRUCTIONS = `You write questions for a Hebrew mobile trivia game.
 - Each request is either for a built-in category, given with its id, Hebrew name and a focus describing what belongs in it, or for a free-text topic chosen by the player.
 - For a category, keep every question within its focus and follow any rules the focus adds; they take precedence over the general style rules below.
 - Write every question, answer and explanation in natural Hebrew, the way a native speaker would. Keep names and technical terms in their common form.
+- Keep the Hebrew grammatically consistent: the question's gender, number and person (e.g. זמר or זמרת, איזה or איזו, מי כתב or מי כתבה) must agree with the correct answer, and every answer must fit the question grammatically.
 - Write exactly the requested number of multiple-choice questions, with a varied mix of sub-topics and difficulty.
 - Be concise: a question is one short sentence, and each answer is a few words at most.
 - Each question has exactly 4 distinct answers and exactly one correct answer. The wrong answers must be plausible but clearly wrong.
+- Never reveal or strongly hint at the correct answer in the question: the question must not contain the correct answer, its name or an obvious part of it.
 - Questions must be factual, unambiguous and verifiable. Avoid opinions, trick questions and facts likely to change over time.
 - Only ask about facts you are certain of. Prefer well-known people, works and events over obscure details, and make sure the explanation agrees with the correct answer.
 - Never repeat a question or ask about the same fact twice.
@@ -44,6 +48,8 @@ export type QuizSubject =
       name: string;
       /** What the category covers; see `categoryGenerationContexts`. */
       generationContext: string;
+      /** See `categoryReasoningEfforts`. */
+      reasoningEffort: ReasoningEffort;
     }
   | { topic: string };
 
@@ -84,6 +90,10 @@ function describeSubject(subject: QuizSubject): string[] {
   return [`Category: ${subject.categoryId} (${subject.name})`, `Category focus: ${subject.generationContext}`];
 }
 
+function reasoningEffort(subject: QuizSubject): ReasoningEffort {
+  return 'reasoningEffort' in subject ? subject.reasoningEffort : DEFAULT_REASONING_EFFORT;
+}
+
 function buildInput({ subject, count, exclude }: QuizBatchOptions) {
   const lines = [...describeSubject(subject), `Number of questions: ${count}`];
   if (exclude.length > 0) {
@@ -102,7 +112,7 @@ async function requestBatch(openai: OpenAI, options: QuizBatchOptions, attempt: 
       model: MODEL,
       instructions: INSTRUCTIONS,
       input: buildInput(options),
-      reasoning: { effort: 'none' },
+      reasoning: { effort: reasoningEffort(options.subject) },
       text: { format: zodTextFormat(generatedQuizSchema(options.count), 'trivia_quiz') },
     });
   } catch (error) {
@@ -120,6 +130,7 @@ async function requestBatch(openai: OpenAI, options: QuizBatchOptions, attempt: 
     // Development-only cost and latency diagnostics; never sent to the player.
     console.log('OpenAI quiz batch', {
       subject: 'categoryId' in options.subject ? options.subject.categoryId : 'custom-topic',
+      reasoningEffort: reasoningEffort(options.subject),
       count: options.count,
       excluded: options.exclude.length,
       attempt,

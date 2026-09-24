@@ -11,3 +11,15 @@ export function normalizeText(text: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Whether the question gives its answer away by containing it: the whole
+ * normalized answer appears in the question as whole words. Answers without
+ * letters (numbers, e.g. in puzzles) and one- or two-letter answers are never
+ * treated as leaked, since they legitimately appear in questions.
+ */
+export function revealsAnswer(question: string, answer: string): boolean {
+  const normalizedAnswer = normalizeText(answer);
+  if (normalizedAnswer.replace(/[^\p{L}]/gu, '').length < 3) return false;
+  return ` ${normalizeText(question)} `.includes(` ${normalizedAnswer} `);
+}

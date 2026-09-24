@@ -1,5 +1,5 @@
 import { findCategory } from '@/data/categories';
-import { categoryGenerationContexts } from '@/server/category-prompts';
+import { categoryGenerationContexts, reasoningEffortFor } from '@/server/category-prompts';
 import {
   generateQuizBatch,
   QuizGenerationError,
@@ -74,6 +74,7 @@ function readSubject(body: object): QuizSubject | null {
       categoryId: category.id,
       name: category.name,
       generationContext: categoryGenerationContexts[category.id],
+      reasoningEffort: reasoningEffortFor(category.id),
     };
   }
   if ('topic' in body && typeof body.topic === 'string') {

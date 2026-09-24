@@ -336,6 +336,10 @@ describe('<QuizScreen /> generation', () => {
     ['three answers', { questions: [{ ...firstBatch[0], answers: ['א', 'ב', 'ג'] }, ...firstBatch.slice(1)] }],
     ['an out-of-range correct answer', { questions: [{ ...firstBatch[0], correctAnswerIndex: 4 }, ...firstBatch.slice(1)] }],
     ['a missing explanation', { questions: [{ ...firstBatch[0], explanation: '' }, ...firstBatch.slice(1)] }],
+    [
+      'a question containing its answer',
+      { questions: [{ ...firstBatch[0], question: 'האם קנברה היא בירת אוסטרליה?' }, ...firstBatch.slice(1)] },
+    ],
     ['not a quiz at all', { message: 'hello' }],
   ])('a malformed response (%s) shows the retry state', async (_case, body) => {
     fetchMock.mockResolvedValue(jsonResponse(200, body));

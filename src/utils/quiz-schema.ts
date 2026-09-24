@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { normalizeText } from '@/utils/question-text';
+import { normalizeText, revealsAnswer } from '@/utils/question-text';
 
 export const QUESTIONS_PER_QUIZ = 10;
 /** The game starts as soon as this many questions are ready; the rest arrive in the background. */
@@ -55,6 +55,9 @@ const questionSchema = z
   })
   .refine((question) => new Set(question.answers).size === question.answers.length, {
     message: 'Answers must be distinct',
+  })
+  .refine((question) => !revealsAnswer(question.question, question.answers[question.correctAnswerIndex]), {
+    message: 'The question must not contain its correct answer',
   });
 
 /**
