@@ -16,18 +16,23 @@ const { APIConnectionError, APIError } = jest.requireActual('openai');
 
 const TEST_KEY = 'sk-test-secret-key';
 
-const generatedQuestions = Array.from({ length: 5 }, (_, index) => ({
-  question: `שאלה מספר ${index + 1}?`,
-  answers: ['א', 'ב', 'ג', 'ד'],
-  correctAnswerIndex: index % 4,
-  explanation: 'הסבר קצר.',
-}));
+function generatedQuestions(count: number, start = 1) {
+  return Array.from({ length: count }, (_, index) => ({
+    question: `שאלה מספר ${start + index}?`,
+    answers: ['א', 'ב', 'ג', 'ד'],
+    correctAnswerIndex: index % 4,
+    explanation: 'הסבר קצר.',
+  }));
+}
+
+const firstBatch = generatedQuestions(3);
 
 function parsedResponse(questions: unknown[] | null) {
   return {
     status: 'completed',
     output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }],
     output_parsed: questions && { questions },
+    usage: { input_tokens: 300, input_tokens_details: { cached_tokens: 0 }, output_tokens: 400 },
   };
 }
 
@@ -39,6 +44,10 @@ function quizRequest(body: unknown) {
   });
 }
 
+function params(call = 0) {
+  return mockParse.mock.calls[call][0];
+}
+
 describe('POST /api/quiz', () => {
   const originalKey = process.env.OPENAI_API_KEY;
   let consoleError: jest.SpyInstance;
@@ -46,7 +55,7 @@ describe('POST /api/quiz', () => {
   beforeEach(() => {
     process.env.OPENAI_API_KEY = TEST_KEY;
     mockParse.mockReset();
-    mockParse.mockResolvedValue(parsedResponse(generatedQuestions));
+    mockParse.mockResolvedValue(parsedResponse(firstBatch));
     consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -60,25 +69,47 @@ describe('POST /api/quiz', () => {
     process.env.OPENAI_API_KEY = originalKey;
   });
 
-  test('generates a quiz for an existing category with structured outputs', async () => {
-    const response = await POST(quizRequest({ categoryId: 'geography' }));
+  test('the first batch of a category returns 3 questions with structured outputs', async () => {
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.questions).toHaveLength(5);
-    expect(body.questions.map((q: { id: string }) => q.id)).toEqual(['q1', 'q2', 'q3', 'q4', 'q5']);
-    expect(body.questions[1]).toEqual({ id: 'q2', ...generatedQuestions[1] });
+    expect(body.questions).toHaveLength(3);
+    expect(body.questions.map((q: { id: string }) => q.id)).toEqual(['q1', 'q2', 'q3']);
+    expect(body.questions[1]).toEqual({ id: 'q2', ...firstBatch[1] });
 
-    const params = mockParse.mock.calls[0][0];
-    expect(params.model).toBe('gpt-6-luna');
-    expect(params.input).toContain('גאוגרפיה');
-    expect(params.text.format).toMatchObject({ type: 'json_schema', name: 'trivia_quiz', strict: true });
+    expect(params().model).toBe('gpt-6-luna');
+    expect(params().reasoning).toEqual({ effort: 'none' });
+    expect(params().input).toContain('Topic: גאוגרפיה');
+    expect(params().input).toContain('Number of questions: 3');
+    expect(params().text.format).toMatchObject({ type: 'json_schema', name: 'trivia_quiz', strict: true });
+    expect(params().text.format.schema.properties.questions).toMatchObject({ minItems: 3, maxItems: 3 });
+  });
+
+  test('the second batch returns the remaining 7 questions', async () => {
+    mockParse.mockResolvedValue(parsedResponse(generatedQuestions(7, 4)));
+
+    const response = await POST(
+      quizRequest({ categoryId: 'geography', count: 7, exclude: firstBatch.map((q) => q.question) }),
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).questions).toHaveLength(7);
+    expect(params().text.format.schema.properties.questions).toMatchObject({ minItems: 7, maxItems: 7 });
+  });
+
+  test('the instructions stay identical across requests so the prompt prefix can be cached', async () => {
+    await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
+    mockParse.mockResolvedValue(parsedResponse(generatedQuestions(7, 4)));
+    await POST(quizRequest({ topic: 'חלל', count: 7, exclude: ['שאלה ישנה?'] }));
+
+    expect(params(1).instructions).toBe(params(0).instructions);
   });
 
   test('the output schema requires Hebrew questions and explanations and non-empty answers', async () => {
-    await POST(quizRequest({ categoryId: 'geography' }));
+    await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
 
-    const { schema } = mockParse.mock.calls[0][0].text.format;
+    const { schema } = params().text.format;
     const question = schema.properties.questions.items;
     expect(question.properties.question.pattern).toBe('[א-ת]');
     expect(question.properties.explanation.pattern).toBe('[א-ת]');
@@ -86,18 +117,36 @@ describe('POST /api/quiz', () => {
   });
 
   test('generates a quiz for a trimmed custom topic', async () => {
-    const response = await POST(quizRequest({ topic: '  חלל  ' }));
+    const response = await POST(quizRequest({ topic: '  חלל  ', count: 3, exclude: [] }));
 
     expect(response.status).toBe(200);
-    expect(mockParse.mock.calls[0][0].input).toBe('הנושא: חלל');
+    expect(params().input).toBe('Topic: חלל\nNumber of questions: 3');
+  });
+
+  test('excluded questions are listed in the prompt with a do-not-repeat instruction', async () => {
+    const exclude = ['מהי בירת צרפת?', 'מהו ההר הגבוה בעולם?'];
+
+    await POST(quizRequest({ categoryId: 'geography', count: 3, exclude }));
+
+    expect(params().input).toContain('do not repeat or reword them');
+    expect(params().input).toContain('- מהי בירת צרפת?\n- מהו ההר הגבוה בעולם?');
+    expect(params().instructions).toMatch(/do not reword them/);
   });
 
   test.each([
-    ['an empty topic', { topic: '' }],
-    ['a whitespace-only topic', { topic: '   ' }],
-    ['a too-long topic', { topic: 'א'.repeat(61) }],
-    ['a non-string topic', { topic: 42 }],
-    ['an unknown category', { categoryId: 'unknown' }],
+    ['an empty topic', { topic: '', count: 3 }],
+    ['a whitespace-only topic', { topic: '   ', count: 3 }],
+    ['a too-long topic', { topic: 'א'.repeat(61), count: 3 }],
+    ['a non-string topic', { topic: 42, count: 3 }],
+    ['an unknown category', { categoryId: 'unknown', count: 3 }],
+    ['a missing count', { categoryId: 'geography' }],
+    ['a zero count', { categoryId: 'geography', count: 0 }],
+    ['a count above a full quiz', { categoryId: 'geography', count: 11 }],
+    ['a fractional count', { categoryId: 'geography', count: 2.5 }],
+    ['a non-array exclusion list', { categoryId: 'geography', count: 3, exclude: 'שאלה' }],
+    ['a non-string exclusion', { categoryId: 'geography', count: 3, exclude: [42] }],
+    ['too many exclusions', { categoryId: 'geography', count: 3, exclude: generatedQuestions(41).map((q) => q.question) }],
+    ['a too-long exclusion', { categoryId: 'geography', count: 3, exclude: ['א'.repeat(301)] }],
     ['an empty body', {}],
     ['invalid JSON', 'not json'],
   ])('rejects %s without calling OpenAI', async (_case, body) => {
@@ -113,7 +162,7 @@ describe('POST /api/quiz', () => {
       new APIError(429, { message: 'Rate limit reached for org-secret' }, 'Rate limit reached', new Headers()),
     );
 
-    const response = await POST(quizRequest({ categoryId: 'technology' }));
+    const response = await POST(quizRequest({ categoryId: 'technology', count: 3, exclude: [] }));
 
     expect(response.status).toBe(502);
     const text = await response.text();
@@ -126,31 +175,54 @@ describe('POST /api/quiz', () => {
     // The SDK already retries connection errors itself.
     mockParse.mockRejectedValue(new APIConnectionError({ message: 'Connection error.' }));
 
-    const response = await POST(quizRequest({ categoryId: 'technology' }));
+    const response = await POST(quizRequest({ categoryId: 'technology', count: 3, exclude: [] }));
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
     expect(mockParse).toHaveBeenCalledTimes(1);
   });
 
-  test('an invalid quiz is retried once and the valid retry is returned', async () => {
+  test('a batch with a duplicate question is retried and the valid retry is returned', async () => {
     mockParse
-      .mockResolvedValueOnce(parsedResponse([generatedQuestions[1], ...generatedQuestions.slice(1)]))
-      .mockResolvedValueOnce(parsedResponse(generatedQuestions));
+      .mockResolvedValueOnce(parsedResponse([firstBatch[1], ...firstBatch.slice(1)]))
+      .mockResolvedValueOnce(parsedResponse(firstBatch));
 
-    const response = await POST(quizRequest({ categoryId: 'geography' }));
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
 
     expect(response.status).toBe(200);
-    expect((await response.json()).questions).toHaveLength(5);
+    expect((await response.json()).questions).toHaveLength(3);
     expect(mockParse).toHaveBeenCalledTimes(2);
   });
 
-  test('output that fails schema parsing is retried once', async () => {
+  test('a batch repeating an excluded question after normalization is retried', async () => {
+    const repeated = { ...firstBatch[0], question: 'מהי בִּירַת צרפת' };
+    mockParse
+      .mockResolvedValueOnce(parsedResponse([repeated, ...firstBatch.slice(1)]))
+      .mockResolvedValueOnce(parsedResponse(firstBatch));
+
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: ['  מהי בירת צרפת?'] }));
+
+    expect(response.status).toBe(200);
+    const questions = (await response.json()).questions;
+    expect(questions.map((q: { question: string }) => q.question)).not.toContain(repeated.question);
+    expect(mockParse).toHaveBeenCalledTimes(2);
+  });
+
+  test('duplicates within a batch are detected after normalization', async () => {
+    const reworded = { ...firstBatch[0], question: 'שאלה  מספר 2' };
+    mockParse.mockResolvedValue(parsedResponse([reworded, ...firstBatch.slice(1)]));
+
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
+
+    expect(response.status).toBe(502);
+  });
+
+  test('output that fails schema parsing is retried', async () => {
     mockParse
       .mockRejectedValueOnce(new SyntaxError('Unexpected end of JSON input'))
-      .mockResolvedValueOnce(parsedResponse(generatedQuestions));
+      .mockResolvedValueOnce(parsedResponse(firstBatch));
 
-    const response = await POST(quizRequest({ categoryId: 'geography' }));
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
 
     expect(response.status).toBe(200);
     expect(mockParse).toHaveBeenCalledTimes(2);
@@ -163,7 +235,7 @@ describe('POST /api/quiz', () => {
       output_parsed: null,
     });
 
-    const response = await POST(quizRequest({ topic: 'נושא לא ראוי' }));
+    const response = await POST(quizRequest({ topic: 'נושא לא ראוי', count: 3, exclude: [] }));
 
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({ error: 'refused' });
@@ -173,33 +245,44 @@ describe('POST /api/quiz', () => {
   test('a response with no parsed output is treated as malformed', async () => {
     mockParse.mockResolvedValue(parsedResponse(null));
 
-    const response = await POST(quizRequest({ categoryId: 'film-and-tv' }));
+    const response = await POST(quizRequest({ categoryId: 'film-and-tv', count: 3, exclude: [] }));
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
-    expect(mockParse).toHaveBeenCalledTimes(2);
+    expect(mockParse).toHaveBeenCalledTimes(3);
   });
 
   test.each([
-    ['duplicate answers', { ...generatedQuestions[0], answers: ['א', 'א', 'ג', 'ד'] }],
-    ['an empty question', { ...generatedQuestions[0], question: '  ' }],
-    ['an empty explanation', { ...generatedQuestions[0], explanation: '' }],
-    ['a repeated question', generatedQuestions[1]],
-  ])('a quiz with %s is treated as malformed', async (_case, firstQuestion) => {
-    mockParse.mockResolvedValue(parsedResponse([firstQuestion, ...generatedQuestions.slice(1)]));
+    ['duplicate answers', { ...firstBatch[0], answers: ['א', 'א', 'ג', 'ד'] }],
+    ['an empty question', { ...firstBatch[0], question: '  ' }],
+    ['an empty explanation', { ...firstBatch[0], explanation: '' }],
+    ['a repeated question', firstBatch[1]],
+    ['an excluded question', { ...firstBatch[0], question: 'שאלה ישנה?' }],
+  ])('a batch with %s is treated as malformed', async (_case, firstQuestion) => {
+    mockParse.mockResolvedValue(parsedResponse([firstQuestion, ...firstBatch.slice(1)]));
 
-    const response = await POST(quizRequest({ categoryId: 'general-knowledge' }));
+    const response = await POST(
+      quizRequest({ categoryId: 'general-knowledge', count: 3, exclude: ['שאלה ישנה?'] }),
+    );
 
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ error: 'unavailable' });
-    // One retry, then give up.
-    expect(mockParse).toHaveBeenCalledTimes(2);
+    // Two retries, then give up.
+    expect(mockParse).toHaveBeenCalledTimes(3);
+  });
+
+  test('a batch with the wrong number of questions is treated as malformed', async () => {
+    mockParse.mockResolvedValue(parsedResponse(generatedQuestions(6, 4)));
+
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 7, exclude: [] }));
+
+    expect(response.status).toBe(502);
   });
 
   test('a missing API key fails safely without calling OpenAI', async () => {
     delete process.env.OPENAI_API_KEY;
 
-    const response = await POST(quizRequest({ categoryId: 'geography' }));
+    const response = await POST(quizRequest({ categoryId: 'geography', count: 3, exclude: [] }));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: 'misconfigured' });

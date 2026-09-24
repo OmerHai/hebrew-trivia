@@ -1,5 +1,5 @@
 import type { Question } from '@/types/question';
-import { quizSchema, type QuizRequest } from '@/utils/quiz-schema';
+import { quizBatchSchema, type QuizBatchRequest } from '@/utils/quiz-schema';
 
 /** Why a quiz could not be loaded, as far as the player needs to know. */
 export type QuizErrorKind = 'network' | 'refused' | 'failed';
@@ -11,8 +11,11 @@ export class QuizRequestError extends Error {
   }
 }
 
-/** Asks the app's API route for a freshly generated quiz and validates the response. */
-export async function fetchQuiz(request: QuizRequest, signal?: AbortSignal): Promise<Question[]> {
+/**
+ * Asks the app's API route for a batch of freshly generated questions and
+ * validates the response, including that no excluded question came back.
+ */
+export async function fetchQuizBatch(request: QuizBatchRequest, signal?: AbortSignal): Promise<Question[]> {
   let response: Response;
   try {
     response = await fetch('/api/quiz', {
@@ -36,7 +39,7 @@ export async function fetchQuiz(request: QuizRequest, signal?: AbortSignal): Pro
     throw new QuizRequestError('failed');
   }
 
-  const quiz = quizSchema.safeParse(body);
-  if (!quiz.success) throw new QuizRequestError('failed');
-  return quiz.data.questions;
+  const batch = quizBatchSchema(request.count, request.exclude).safeParse(body);
+  if (!batch.success) throw new QuizRequestError('failed');
+  return batch.data.questions;
 }

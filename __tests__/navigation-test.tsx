@@ -7,7 +7,7 @@ import CustomTopicQuizScreen from '@/app/quiz/custom';
 import RootLayout from '@/app/_layout';
 import type { Question } from '@/types/question';
 
-const questions: Question[] = Array.from({ length: 5 }, (_, index) => ({
+const questions: Question[] = Array.from({ length: 10 }, (_, index) => ({
   id: `q${index + 1}`,
   question: `שאלה מספר ${index + 1}?`,
   answers: ['א', 'ב', 'ג', 'ד'],
@@ -20,7 +20,11 @@ const fetchMock = jest.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
-  fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ questions }) });
+  fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+    // Like the API route: the first batch has 3 questions, the second the remaining 7.
+    const batch = JSON.parse(init.body as string).count === 3 ? questions.slice(0, 3) : questions.slice(3);
+    return { ok: true, status: 200, json: async () => ({ questions: batch }) };
+  });
   global.fetch = fetchMock;
 });
 
@@ -66,8 +70,8 @@ describe('navigation', () => {
 
     expect(router.getPathname()).toBe('/quiz/technology');
     expect(await screen.findByText('💻 טכנולוגיה')).toBeOnTheScreen();
-    expect(screen.getByText('שאלה 1 מתוך 5')).toBeOnTheScreen();
-    expect(requestBody()).toEqual({ categoryId: 'technology' });
+    expect(screen.getByText('שאלה 1 מתוך 10')).toBeOnTheScreen();
+    expect(requestBody()).toEqual({ categoryId: 'technology', count: 3, exclude: [] });
   });
 
   test('a custom topic starts a generated quiz on that topic', async () => {
@@ -80,7 +84,7 @@ describe('navigation', () => {
 
     expect(router.getPathname()).toBe('/quiz/custom');
     expect(await screen.findByText('✏️ מוזיקה ישראלית')).toBeOnTheScreen();
-    expect(requestBody()).toEqual({ topic: 'מוזיקה ישראלית' });
+    expect(requestBody()).toEqual({ topic: 'מוזיקה ישראלית', count: 3, exclude: [] });
   });
 
   test.each([

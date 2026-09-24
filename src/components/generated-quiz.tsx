@@ -39,35 +39,62 @@ export function GeneratedQuiz({ title, request }: Props) {
   }
 
   if (quiz.status === 'error') {
-    return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <Text accessibilityRole="header" style={[styles.category, styles.centeredText, { color: colors.title }]}>
-          אופס!
-        </Text>
-        <Text style={[styles.subtitle, styles.centeredText, { color: colors.subtitle }]}>
-          {ERROR_MESSAGES[quiz.error]}
-        </Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={quiz.retry}
-          style={({ pressed }) => [styles.button, styles.retryButton, pressed && styles.buttonPressed]}>
-          <Text style={styles.buttonLabel}>נסה שוב</Text>
-        </Pressable>
-      </View>
-    );
+    return <ErrorState error={quiz.error} onRetry={quiz.retry} />;
   }
 
-  return <Quiz title={title} questions={quiz.questions} />;
+  return (
+    <Quiz
+      title={title}
+      questions={quiz.questions}
+      total={quiz.total}
+      backgroundError={quiz.backgroundError}
+      onRetry={quiz.retry}
+    />
+  );
 }
 
-function Quiz({ title, questions }: { title: string; questions: Question[] }) {
+function ErrorState({ error, onRetry }: { error: QuizErrorKind; onRetry: () => void }) {
   const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
-  const quiz = useQuiz(questions);
+  return (
+    <View style={[styles.centered, { backgroundColor: colors.background }]}>
+      <Text accessibilityRole="header" style={[styles.category, styles.centeredText, { color: colors.title }]}>
+        אופס!
+      </Text>
+      <Text style={[styles.subtitle, styles.centeredText, { color: colors.subtitle }]}>{ERROR_MESSAGES[error]}</Text>
+      <Pressable
+        accessibilityRole="button"
+        onPress={onRetry}
+        style={({ pressed }) => [styles.button, styles.retryButton, pressed && styles.buttonPressed]}>
+        <Text style={styles.buttonLabel}>נסה שוב</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+type QuizProps = {
+  title: string;
+  /** The questions ready so far. */
+  questions: Question[];
+  total: number;
+  /** Set when loading the rest of the questions failed. */
+  backgroundError: QuizErrorKind | null;
+  onRetry: () => void;
+};
+
+function Quiz({ title, questions, total, backgroundError, onRetry }: QuizProps) {
+  const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
+  const quiz = useQuiz(questions, total);
   const { question, selectedIndex, isAnswered } = quiz;
-  const isCorrect = selectedIndex === question.correctAnswerIndex;
+
+  // The player is ahead of the questions that have arrived so far.
+  if (!question && backgroundError) {
+    return <ErrorState error={backgroundError} onRetry={onRetry} />;
+  }
+
+  const isCorrect = selectedIndex === question?.correctAnswerIndex;
 
   const answerStatus = (index: number): AnswerStatus => {
-    if (!isAnswered) return 'idle';
+    if (!isAnswered || !question) return 'idle';
     if (index === question.correctAnswerIndex) return 'correct';
     return index === selectedIndex ? 'incorrect' : 'idle';
   };
@@ -96,38 +123,50 @@ function Quiz({ title, questions }: { title: string; questions: Question[] }) {
         </View>
       </View>
 
-      <Text accessibilityRole="header" style={[styles.question, { color: colors.title }]}>
-        {question.question}
-      </Text>
+      {question ? (
+        <>
+          <Text accessibilityRole="header" style={[styles.question, { color: colors.title }]}>
+            {question.question}
+          </Text>
 
-      <View style={styles.answers}>
-        {question.answers.map((answer, index) => (
-          <AnswerButton
-            key={answer}
-            label={answer}
-            status={answerStatus(index)}
-            disabled={isAnswered}
-            onPress={() => quiz.selectAnswer(index)}
-          />
-        ))}
-      </View>
-
-      {isAnswered && (
-        <View style={styles.footer}>
-          <View accessibilityLiveRegion="polite" style={styles.feedbackGroup}>
-            <Text style={[styles.feedback, { color: isCorrect ? success : danger }]}>
-              {isCorrect
-                ? 'תשובה נכונה, כל הכבוד!'
-                : `טעות. התשובה הנכונה היא: ${question.answers[question.correctAnswerIndex]}`}
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.subtitle }]}>{question.explanation}</Text>
+          <View style={styles.answers}>
+            {question.answers.map((answer, index) => (
+              <AnswerButton
+                key={answer}
+                label={answer}
+                status={answerStatus(index)}
+                disabled={isAnswered}
+                onPress={() => quiz.selectAnswer(index)}
+              />
+            ))}
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleNext}
-            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
-            <Text style={styles.buttonLabel}>{quiz.isLastQuestion ? 'לתוצאות' : 'לשאלה הבאה'}</Text>
-          </Pressable>
+
+          {isAnswered && (
+            <View style={styles.footer}>
+              <View accessibilityLiveRegion="polite" style={styles.feedbackGroup}>
+                <Text style={[styles.feedback, { color: isCorrect ? success : danger }]}>
+                  {isCorrect
+                    ? 'תשובה נכונה, כל הכבוד!'
+                    : `טעות. התשובה הנכונה היא: ${question.answers[question.correctAnswerIndex]}`}
+                </Text>
+                <Text style={[styles.subtitle, { color: colors.subtitle }]}>{question.explanation}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={handleNext}
+                style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}>
+                <Text style={styles.buttonLabel}>{quiz.isLastQuestion ? 'לתוצאות' : 'לשאלה הבאה'}</Text>
+              </Pressable>
+            </View>
+          )}
+        </>
+      ) : (
+        // Continues on its own once the rest of the questions arrive.
+        <View style={styles.waiting}>
+          <ActivityIndicator size="large" color={accent} />
+          <Text accessibilityLiveRegion="polite" style={[styles.subtitle, styles.centeredText, { color: colors.subtitle }]}>
+            מכין עוד שאלות...
+          </Text>
         </View>
       )}
     </ScrollView>
@@ -173,6 +212,11 @@ const styles = StyleSheet.create({
   },
   answers: {
     gap: 12,
+  },
+  waiting: {
+    alignItems: 'center',
+    gap: 16,
+    paddingVertical: 32,
   },
   footer: {
     gap: 16,
