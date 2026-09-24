@@ -3,16 +3,11 @@ import * as ReactNative from 'react-native';
 
 import CategoriesScreen from '@/app/categories';
 import { categories } from '@/data/categories';
+import { categoryTints, palette } from '@/theme';
 
 describe('<CategoriesScreen />', () => {
   afterEach(() => {
     jest.restoreAllMocks();
-  });
-
-  test('renders the Hebrew title', async () => {
-    await render(<CategoriesScreen />);
-
-    expect(screen.getByRole('header', { name: 'בחר נושא' })).toBeOnTheScreen();
   });
 
   test('renders all 16 predefined categories as buttons, in order', async () => {
@@ -24,12 +19,22 @@ describe('<CategoriesScreen />', () => {
     expect(names).toEqual(categories.map((category) => category.name));
   });
 
-  test('each category shows its emoji next to its Hebrew name', async () => {
+  test('lays the categories out as a two-column grid', async () => {
+    await render(<CategoriesScreen />);
+
+    const rows = new Set(screen.getAllByRole('button').map((button) => button.parent));
+    expect(rows.size).toBe(8);
+    for (const row of rows) expect(row?.children).toHaveLength(2);
+  });
+
+  test('each category shows its Hebrew name on its own soft color, without emoji', async () => {
     await render(<CategoriesScreen />);
 
     for (const category of categories) {
-      expect(screen.getByText(category.emoji)).toBeOnTheScreen();
-      expect(screen.getByText(category.name)).toBeOnTheScreen();
+      const tile = screen.getByRole('button', { name: category.name });
+      expect(tile).toHaveTextContent(category.name);
+      expect(tile).toHaveStyle({ backgroundColor: categoryTints.light[category.tint].background });
+      expect(tile).not.toHaveTextContent(/\p{Extended_Pictographic}/u);
     }
   });
 
@@ -42,11 +47,15 @@ describe('<CategoriesScreen />', () => {
     expect(screen.queryByRole('button', { name: 'צור משחק' })).not.toBeOnTheScreen();
   });
 
-  test('uses light text on the dark color scheme', async () => {
+  test('uses the dark palette and dark tints in dark mode', async () => {
     jest.spyOn(ReactNative, 'useColorScheme').mockReturnValue('dark');
 
     await render(<CategoriesScreen />);
 
-    expect(screen.getByRole('header', { name: 'בחר נושא' })).toHaveStyle({ color: '#F2F5FA' });
+    const [first] = categories;
+    expect(screen.getByRole('button', { name: first.name })).toHaveStyle({
+      backgroundColor: categoryTints.dark[first.tint].background,
+    });
+    expect(screen.getByText(first.name)).toHaveStyle({ color: palette.dark.text });
   });
 });

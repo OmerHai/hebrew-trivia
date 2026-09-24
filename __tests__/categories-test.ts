@@ -4,6 +4,7 @@ import {
   categoryReasoningEfforts,
   reasoningEffortFor,
 } from '@/server/category-prompts';
+import { categoryTints } from '@/theme';
 
 const EXPECTED_CATEGORIES = [
   ['general-knowledge', 'ידע כללי'],
@@ -36,15 +37,26 @@ describe('predefined categories', () => {
     for (const id of ids) expect(id).toMatch(/^[a-z]+(-[a-z]+)*$/);
   });
 
-  test.each(categories)('$id has a Hebrew name and an emoji', (category) => {
+  test.each(categories)('$id has a Hebrew name, a native icon for each platform and a tint', (category) => {
     expect(category.name).toMatch(/^[א-ת ]+$/);
-    expect(category.emoji).toMatch(/\p{Extended_Pictographic}|\p{Regional_Indicator}/u);
+    expect(category.icon.ios).toMatch(/^[a-z0-9.]+$/);
+    expect(category.icon.android).toMatch(/^[a-z0-9_]+$/);
+    expect(Object.keys(categoryTints.light)).toContain(category.tint);
   });
 
   test('categories expose only player-facing fields, never the generation context', () => {
     for (const category of categories) {
-      expect(Object.keys(category).sort()).toEqual(['emoji', 'id', 'name']);
+      expect(Object.keys(category).sort()).toEqual(['icon', 'id', 'name', 'tint']);
     }
+  });
+
+  test('neighbors in the two-column grid never share a tint', () => {
+    categories.forEach((category, index) => {
+      const beside = index % 2 === 0 ? categories[index + 1] : undefined;
+      const below = categories[index + 2];
+      if (beside) expect(beside.tint).not.toBe(category.tint);
+      if (below) expect(below.tint).not.toBe(category.tint);
+    });
   });
 
   test('findCategory finds a category by id and nothing for anything else', () => {

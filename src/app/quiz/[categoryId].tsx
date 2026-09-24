@@ -1,36 +1,30 @@
-import { useLocalSearchParams } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 
+import { Button } from '@/components/button';
+import { CategoryLabel } from '@/components/category-label';
 import { GeneratedQuiz } from '@/components/generated-quiz';
-import { palette } from '@/constants/theme';
+import { MessageScreen } from '@/components/message-screen';
 import { findCategory } from '@/data/categories';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function QuizScreen() {
   const { categoryId } = useLocalSearchParams<{ categoryId: string }>();
-  const colors = palette[useColorScheme() === 'dark' ? 'dark' : 'light'];
   const category = findCategory(categoryId);
 
   if (!category) {
     return (
-      <View style={[styles.empty, { backgroundColor: colors.background }]}>
-        <Text style={[styles.subtitle, { color: colors.subtitle }]}>לא מצאנו שאלות בנושא הזה</Text>
-      </View>
+      <MessageScreen
+        icon={{ ios: 'questionmark.folder', android: 'folder_off' }}
+        title="לא מצאנו את הנושא הזה"
+        message="אפשר לבחור נושא אחר מהרשימה."
+        actions={<Button title="לבחירת נושא" onPress={() => router.dismissTo('/categories')} />}
+      />
     );
   }
 
-  return <GeneratedQuiz title={`${category.emoji} ${category.name}`} categoryId={category.id} />;
+  return (
+    <>
+      <Stack.Screen options={{ title: category.name, headerTitle: () => <CategoryLabel category={category} /> }} />
+      <GeneratedQuiz categoryId={category.id} />
+    </>
+  );
 }
-
-const styles = StyleSheet.create({
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  subtitle: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-});
