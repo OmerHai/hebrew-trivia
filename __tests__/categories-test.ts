@@ -19,14 +19,13 @@ const EXPECTED_CATEGORIES = [
   ['football', 'כדורגל'],
   ['food', 'אוכל'],
   ['israel', 'ישראל'],
-  ['israeli-culture', 'תרבות ישראלית'],
   ['video-games', 'משחקי מחשב'],
   ['books', 'ספרים'],
   ['logic-puzzles', 'חידות היגיון'],
 ];
 
 describe('predefined categories', () => {
-  test('all 17 categories are present, in order, with their stable ids and Hebrew names', () => {
+  test('all 16 categories are present, in order, with their stable ids and Hebrew names', () => {
     expect(categories.map((category) => [category.id, category.name])).toEqual(EXPECTED_CATEGORIES);
   });
 
@@ -74,13 +73,16 @@ describe('category generation contexts', () => {
     expect(categoryGenerationContexts.sports).toMatch(/Do not ask about football/);
   });
 
-  test('Israel and Israeli culture split facts from culture', () => {
+  test('Israel covers Israeli geography, history and institutions', () => {
     expect(categoryGenerationContexts.israel).toMatch(/geography/);
     expect(categoryGenerationContexts.israel).toMatch(/history/);
     expect(categoryGenerationContexts.israel).toMatch(/institutions/);
-    expect(categoryGenerationContexts.israel).toMatch(/Culture and entertainment belong to the Israeli culture category/);
-    expect(categoryGenerationContexts['israeli-culture']).toMatch(/music.*television.*cinema.*literature/);
-    expect(categoryGenerationContexts['israeli-culture']).toMatch(/Avoid politics, history and geography/);
+  });
+
+  test('no context points to the removed Israeli culture category', () => {
+    for (const context of Object.values(categoryGenerationContexts)) {
+      expect(context).not.toMatch(/Israeli culture/);
+    }
   });
 
   test('logic puzzles prioritize reasoning over factual trivia', () => {
@@ -94,10 +96,12 @@ describe('category generation contexts', () => {
     }
   });
 
-  test.each(['israeli-culture', 'tv-series'] as const)('%s asks for high-confidence facts only', (id) => {
-    expect(categoryGenerationContexts[id]).toMatch(/Prefer well-known, high-confidence facts/);
-    expect(categoryGenerationContexts[id]).toMatch(/skip anything you are unsure of/);
-    expect(categoryGenerationContexts[id]).toMatch(/Never invent awards, credits, creators, performers or historical facts/);
+  test('TV series asks for high-confidence facts only', () => {
+    const context = categoryGenerationContexts['tv-series'];
+
+    expect(context).toMatch(/Prefer well-known, high-confidence facts/);
+    expect(context).toMatch(/skip anything you are unsure of/);
+    expect(context).toMatch(/Never invent awards, credits, creators, performers or historical facts/);
   });
 
   test('logic puzzles must be self-contained, unambiguous and explained step by step', () => {
@@ -112,17 +116,16 @@ describe('category generation contexts', () => {
 });
 
 describe('category reasoning effort', () => {
-  test('only Israeli culture and TV series get more reasoning', () => {
-    expect(categoryReasoningEfforts).toEqual({ 'israeli-culture': 'low', 'tv-series': 'low' });
+  test('only TV series gets more reasoning', () => {
+    expect(categoryReasoningEfforts).toEqual({ 'tv-series': 'low' });
   });
 
   test('every other category, including logic puzzles, uses none', () => {
-    const others = categories.filter((category) => !['israeli-culture', 'tv-series'].includes(category.id));
+    const others = categories.filter((category) => category.id !== 'tv-series');
 
     expect(others).toHaveLength(15);
     for (const category of others) expect(reasoningEffortFor(category.id)).toBe('none');
     expect(reasoningEffortFor('logic-puzzles')).toBe('none');
-    expect(reasoningEffortFor('israeli-culture')).toBe('low');
     expect(reasoningEffortFor('tv-series')).toBe('low');
   });
 });

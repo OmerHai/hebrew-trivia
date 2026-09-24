@@ -155,10 +155,17 @@ describe('POST /api/quiz', () => {
     expect(params().instructions).toMatch(/follow any rules the focus adds; they take precedence/);
   });
 
-  test.each(['israeli-culture', 'tv-series'])('%s is generated with low reasoning effort', async (categoryId) => {
-    await POST(quizRequest({ categoryId, count: 3, exclude: [] }));
+  test('tv-series is generated with low reasoning effort', async () => {
+    await POST(quizRequest({ categoryId: 'tv-series', count: 3, exclude: [] }));
 
     expect(params().reasoning).toEqual({ effort: 'low' });
+  });
+
+  test('the removed israeli-culture category is rejected without calling OpenAI', async () => {
+    const response = await POST(quizRequest({ categoryId: 'israeli-culture', count: 3, exclude: [] }));
+
+    expect(response.status).toBe(400);
+    expect(mockParse).not.toHaveBeenCalled();
   });
 
   test.each(['geography', 'logic-puzzles', 'football', 'movies'])(
@@ -195,7 +202,7 @@ describe('POST /api/quiz', () => {
       .mockResolvedValueOnce(parsedResponse([leaking, ...firstBatch.slice(1)]))
       .mockResolvedValueOnce(parsedResponse(firstBatch));
 
-    const response = await POST(quizRequest({ categoryId: 'israeli-culture', count: 3, exclude: [] }));
+    const response = await POST(quizRequest({ categoryId: 'general-knowledge', count: 3, exclude: [] }));
 
     expect(response.status).toBe(200);
     const questions = (await response.json()).questions;

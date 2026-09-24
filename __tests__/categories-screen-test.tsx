@@ -15,12 +15,12 @@ describe('<CategoriesScreen />', () => {
     expect(screen.getByRole('header', { name: 'בחר נושא' })).toBeOnTheScreen();
   });
 
-  test('renders all 17 predefined categories as buttons, in order', async () => {
+  test('renders all 16 predefined categories as buttons, in order', async () => {
     await render(<CategoriesScreen />);
 
     const names = screen.getAllByRole('button').map((button) => button.props.accessibilityLabel);
 
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(16);
     expect(names).toEqual(categories.map((category) => category.name));
   });
 

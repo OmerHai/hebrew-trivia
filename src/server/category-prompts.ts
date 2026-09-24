@@ -7,7 +7,7 @@ import type { CategoryId } from '@/data/categories';
 
 /**
  * What each category covers, written for the model. Neighbouring categories
- * (sports and football, Israel and Israeli culture, music and Israeli culture…)
+ * (sports and football, science and nature, movies and TV series…)
  * say where their borders are so their questions don't overlap.
  */
 export const categoryGenerationContexts = {
@@ -24,11 +24,11 @@ export const categoryGenerationContexts = {
   technology:
     'Computers, the internet, software, smartphones, famous technology companies and founders, inventions and the history of computing, with technical concepts kept simple. Video games have their own category.',
   movies:
-    'Cinema: famous films and franchises, directors, actors, film awards such as the Oscars, genres, memorable scenes and film history, mostly international. Not TV series, and Israeli cinema belongs to the Israeli culture category.',
+    'Cinema: famous films and franchises, directors, actors, film awards such as the Oscars, genres, memorable scenes and film history, mostly international. Not TV series.',
   'tv-series':
-    'Television series: dramas, comedies, sitcoms, animated and streaming series, their characters, actors, creators and plots, mostly international. Not feature films, and Israeli TV belongs to the Israeli culture category. Prefer well-known, high-confidence facts and skip anything you are unsure of. Never invent awards, credits, creators, performers or historical facts.',
+    'Television series: dramas, comedies, sitcoms, animated and streaming series, their characters, actors, creators and plots, mostly international. Not feature films. Prefer well-known, high-confidence facts and skip anything you are unsure of. Never invent awards, credits, creators, performers or historical facts.',
   music:
-    'Music: artists, bands, songs, albums, genres, instruments, basic music theory and music history from classical to modern pop, mostly international. Israeli music belongs to the Israeli culture category.',
+    'Music: artists, bands, songs, albums, genres, instruments, basic music theory and music history from classical to modern pop, mostly international.',
   sports:
     'Sports other than football (soccer): basketball, tennis, the Olympic Games, athletics, swimming, cycling, motor racing and more — famous athletes, records, rules and competitions. Do not ask about football, which has its own category.',
   football:
@@ -36,13 +36,11 @@ export const categoryGenerationContexts = {
   food:
     'Food and drink: dishes and cuisines from around the world, ingredients, spices, cooking techniques, drinks, and the origins of foods and culinary traditions.',
   israel:
-    'The State of Israel and the Land of Israel: geography, cities, landmarks and nature sites, history from ancient times to today, state institutions, national symbols and general facts. Culture and entertainment belong to the Israeli culture category.',
-  'israeli-culture':
-    'Israeli culture: Israeli music and singers, television, cinema, literature and poetry, theatre, comedy, popular culture and slang, and well-known Israeli artists. Stick to famous, widely known works and artists, and avoid details such as character names unless they are iconic. Prefer well-known, high-confidence facts and skip anything you are unsure of. Never invent awards, credits, creators, performers or historical facts. Avoid politics, history and geography.',
+    'The State of Israel and the Land of Israel: geography, cities, landmarks and nature sites, history from ancient times to today, state institutions, national symbols and general facts.',
   'video-games':
     'Video games: famous games and franchises, characters, consoles and platforms, game studios and designers, gaming history and esports.',
   books:
-    'Books and literature: famous novels, authors and poets, literary characters, classics, children’s books, fantasy and best-sellers, mostly world literature. Israeli literature belongs to the Israeli culture category.',
+    'Books and literature: famous novels, authors and poets, literary characters, classics, children’s books, fantasy and best-sellers, mostly world literature.',
   'logic-puzzles': [
     'Logic puzzles and brain teasers, not factual trivia. Each question is a short, self-contained puzzle: deduction, number or letter sequences, patterns, simple arithmetic reasoning, lateral thinking or a classic brain teaser.',
     'Prioritize reasoning over factual recall: never rely on outside knowledge beyond everyday basics, and never disguise obscure trivia as logic.',
@@ -62,7 +60,6 @@ export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'none';
  * keep this list short.
  */
 export const categoryReasoningEfforts: Partial<Record<CategoryId, ReasoningEffort>> = {
-  'israeli-culture': 'low',
   'tv-series': 'low',
 };
 

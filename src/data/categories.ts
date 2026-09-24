@@ -16,7 +16,6 @@ export const categories = [
   { id: 'football', name: 'כדורגל', emoji: '⚽' },
   { id: 'food', name: 'אוכל', emoji: '🍕' },
   { id: 'israel', name: 'ישראל', emoji: '🇮🇱' },
-  { id: 'israeli-culture', name: 'תרבות ישראלית', emoji: '🎭' },
   { id: 'video-games', name: 'משחקי מחשב', emoji: '🎮' },
   { id: 'books', name: 'ספרים', emoji: '📚' },
   { id: 'logic-puzzles', name: 'חידות היגיון', emoji: '🧩' },
