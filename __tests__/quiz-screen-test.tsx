@@ -227,7 +227,7 @@ describe('<QuizScreen /> generation', () => {
     });
   });
 
-  test.each(['easy', 'hard'])('both batches of a %s quiz ask for that difficulty', async (difficulty) => {
+  test.each(['easy', 'medium'])('both batches of a %s quiz ask for that difficulty', async (difficulty) => {
     await renderLoadedQuiz(`/quiz/geography?difficulty=${difficulty}`);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -236,11 +236,11 @@ describe('<QuizScreen /> generation', () => {
   });
 
   test('the quiz header shows the category with the difficulty beside it', async () => {
-    await renderLoadedQuiz('/quiz/geography?difficulty=hard');
+    await renderLoadedQuiz('/quiz/geography?difficulty=easy');
 
     expect(screen.getByText('גאוגרפיה')).toBeOnTheScreen();
-    const level = screen.getByLabelText('רמת קושי: קשה');
-    expect(level).toHaveTextContent('קשה');
+    const level = screen.getByLabelText('רמת קושי: קל');
+    expect(level).toHaveTextContent('קל');
     // Quieter than the category name.
     expect(level).toHaveStyle({ color: palette.light.textSecondary });
   });
@@ -429,14 +429,14 @@ describe('<QuizScreen /> played-question history', () => {
 
   test('another difficulty of the same category keeps its own history', async () => {
     await renderLoadedQuiz('/quiz/geography?difficulty=easy');
-    await playAnotherGame('/quiz/geography?difficulty=hard', 'category:geography:easy');
+    await playAnotherGame('/quiz/geography?difficulty=medium', 'category:geography:easy');
 
-    // Easy questions don't hold back the hard game…
-    expect(requestBody(0)).toEqual({ categoryId: 'geography', difficulty: 'hard', count: 3, exclude: [] });
-    expect(await recentQuestions('category:geography:hard')).toEqual(
+    // Easy questions don't hold back the medium game…
+    expect(requestBody(0)).toEqual({ categoryId: 'geography', difficulty: 'medium', count: 3, exclude: [] });
+    expect(await recentQuestions('category:geography:medium')).toEqual(
       moreGeography.map((question) => question.question).reverse(),
     );
-    // …and the hard game leaves the easy history as it was.
+    // …and the medium game leaves the easy history as it was.
     expect(await recentQuestions('category:geography:easy')).toEqual(
       geography.map((question) => question.question).reverse(),
     );
@@ -444,7 +444,7 @@ describe('<QuizScreen /> played-question history', () => {
 
   test('returning to a difficulty excludes what was played at that difficulty only', async () => {
     await renderLoadedQuiz('/quiz/geography?difficulty=easy');
-    await playAnotherGame('/quiz/geography?difficulty=hard', 'category:geography:easy');
+    await playAnotherGame('/quiz/geography?difficulty=medium', 'category:geography:easy');
     fetchMock.mockClear();
     fetchMock.mockImplementation((_url: string, init: RequestInit) => respondByBatch(init, moreGeography.map(
       (question) => ({ ...question, question: `שלישי: ${question.question}` }),

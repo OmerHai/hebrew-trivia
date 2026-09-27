@@ -17,7 +17,7 @@ type HistoryEntry = {
 
 /**
  * Identifies the history relevant to a game: each category and difficulty, by
- * their stable ids, has its own, so an easy game never holds back hard questions.
+ * their stable ids, has its own, so an easy game never holds back medium questions.
  */
 export function historyScope(categoryId: string, difficulty: string): string {
   return `category:${categoryId}:${difficulty}`;

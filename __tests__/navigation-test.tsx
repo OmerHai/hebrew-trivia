@@ -76,7 +76,6 @@ describe('navigation', () => {
     expect(screen.getAllByRole('button').map((button) => button.props.accessibilityLabel)).toEqual([
       'קל',
       'בינוני',
-      'קשה',
     ]);
     // Nothing is generated until a level is chosen.
     expect(fetchMock).not.toHaveBeenCalled();

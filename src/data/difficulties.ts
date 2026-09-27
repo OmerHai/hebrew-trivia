@@ -5,7 +5,6 @@ import type { Difficulty } from '@/types/difficulty';
 export const difficulties = [
   { id: 'easy', name: 'קל', description: 'חימום נעים לכל אחד', level: 1 },
   { id: 'medium', name: 'בינוני', description: 'למי שמכיר את התחום', level: 2 },
-  { id: 'hard', name: 'קשה', description: 'אתגר רציני למומחים', level: 3 },
 ] as const satisfies readonly Difficulty[];
 
 export type DifficultyId = (typeof difficulties)[number]['id'];

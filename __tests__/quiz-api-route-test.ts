@@ -4,13 +4,12 @@
 import { POST } from '@/app/api/quiz+api';
 import { categories } from '@/data/categories';
 import { difficulties } from '@/data/difficulties';
-import { categoryGenerationContexts, categoryReasoningEfforts } from '@/server/category-prompts';
+import { categoryGenerationContexts } from '@/server/category-prompts';
 import {
   difficultyGuidanceFor,
   logicPuzzleDifficultyGuidance,
   triviaDifficultyGuidance,
 } from '@/server/difficulty-prompts';
-import { spareQuestionsFor } from '@/server/quiz-generator';
 
 // Replace the OpenAI client so tests never reach the real API.
 const mockParse = jest.fn();
@@ -57,86 +56,6 @@ function params(call = 0) {
   return mockParse.mock.calls[call][0];
 }
 
-type Verdict = {
-  id: string;
-  check: string;
-  solvedAnswer: string;
-  factuallyCorrect: boolean;
-  exactlyOneCorrect: boolean;
-  distractorsWrong: boolean;
-  unambiguous: boolean;
-  explanationConsistent: boolean;
-  fairDifficulty: boolean;
-  verdict: 'pass' | 'fail';
-  reason: string;
-};
-
-function reviewResponse(reviews: Verdict[] | null) {
-  return {
-    status: 'completed',
-    output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }],
-    output_parsed: reviews && { reviews },
-    usage: { input_tokens: 1500, input_tokens_details: { cached_tokens: 0 }, output_tokens: 900 },
-  };
-}
-
-/** Reads the questions, with their ids and marked answers, back from a review request. */
-function reviewedQuestions(input: string) {
-  const questions = [...input.matchAll(/^\[(\S+)\] (.+)$/gm)].map((match) => ({ id: match[1], question: match[2] }));
-  const marked = [...input.matchAll(/^Marked correct: ([A-D])$/gm)].map((match) => match[1]);
-  return questions.map((question, index) => ({ ...question, marked: marked[index] }));
-}
-
-function passingVerdict(id: string, marked: string): Verdict {
-  return {
-    id,
-    check: 'Checked.',
-    solvedAnswer: marked,
-    factuallyCorrect: true,
-    exactlyOneCorrect: true,
-    distractorsWrong: true,
-    unambiguous: true,
-    explanationConsistent: true,
-    fairDifficulty: true,
-    verdict: 'pass',
-    reason: '',
-  };
-}
-
-/**
- * Stands in for OpenAI. Generation requests get the next of `batches` (then
- * `firstBatch`); a review passes every question with its marked answer,
- * unless `verdictFor` overrides the verdict for a question. Returns the
- * implementation so tests can combine it with one-off responses.
- */
-function mockOpenAI(
-  batches: unknown[][],
-  verdictFor: (question: string) => Partial<Verdict> | undefined = () => undefined,
-) {
-  const queue = [...batches];
-  const implementation = async (request: { input: string; text: { format: { name: string } } }) => {
-    if (request.text.format.name !== 'quiz_review') return parsedResponse(queue.shift() ?? firstBatch);
-    return reviewResponse(
-      reviewedQuestions(request.input).map(({ id, question, marked }) => ({
-        ...passingVerdict(id, marked),
-        ...verdictFor(question),
-      })),
-    );
-  };
-  mockParse.mockImplementation(implementation);
-  return implementation;
-}
-
-function callsNamed(name: string) {
-  return mockParse.mock.calls.map(([request]) => request).filter((request) => request.text.format.name === name);
-}
-
-const generationCalls = () => callsNamed('trivia_quiz');
-const reviewCalls = () => callsNamed('quiz_review');
-/** The questions each review request covered, one list per request. */
-const reviewedBatches = () =>
-  reviewCalls().map((request) => reviewedQuestions(request.input).map((reviewed) => reviewed.question));
-
 describe('POST /api/quiz', () => {
   const originalKey = process.env.OPENAI_API_KEY;
   let consoleError: jest.SpyInstance;
@@ -144,7 +63,7 @@ describe('POST /api/quiz', () => {
   beforeEach(() => {
     process.env.OPENAI_API_KEY = TEST_KEY;
     mockParse.mockReset();
-    mockOpenAI([]);
+    mockParse.mockResolvedValue(parsedResponse(firstBatch));
     consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -364,6 +283,7 @@ describe('POST /api/quiz', () => {
     ['a too-long exclusion', { categoryId: 'geography', difficulty: 'medium', count: 3, exclude: ['א'.repeat(301)] }],
     ['a missing difficulty', { categoryId: 'geography', count: 3, exclude: [] }],
     ['an unknown difficulty', { categoryId: 'geography', difficulty: 'expert', count: 3, exclude: [] }],
+    ['the removed hard difficulty', { categoryId: 'geography', difficulty: 'hard', count: 3, exclude: [] }],
     ['a Hebrew difficulty label instead of its id', { categoryId: 'geography', difficulty: 'קל', count: 3 }],
     ['a differently cased difficulty', { categoryId: 'geography', difficulty: 'Easy', count: 3 }],
     ['a non-string difficulty', { categoryId: 'geography', difficulty: 1, count: 3 }],
@@ -501,6 +421,10 @@ describe('POST /api/quiz', () => {
   });
 
   describe('difficulty', () => {
+    test('exactly two levels are supported: easy and medium', () => {
+      expect(difficulties.map((difficulty) => difficulty.id)).toEqual(['easy', 'medium']);
+    });
+
     test.each(difficulties)('$id is passed to OpenAI with its trivia guidance', async (difficulty) => {
       const response = await POST(
         quizRequest({ categoryId: 'geography', difficulty: difficulty.id, count: 3, exclude: [] }),
@@ -518,18 +442,19 @@ describe('POST /api/quiz', () => {
         await POST(quizRequest({ categoryId: 'history', difficulty: difficulty.id, count: 3, exclude: [] }));
       }
 
-      const requests = generationCalls();
-      expect(new Set(requests.map((request) => request.input)).size).toBe(3);
+      const requests = mockParse.mock.calls.map(([request]) => request);
+      expect(new Set(requests.map((request) => request.input)).size).toBe(2);
       expect(new Set(requests.map((request) => request.instructions)).size).toBe(1);
     });
 
-    test('the trivia guidance asks for accessible easy questions and fair hard ones', () => {
+    test('the trivia guidance asks for accessible easy questions and solid, reliable medium ones', () => {
       expect(triviaDifficultyGuidance.easy).toMatch(/common, accessible knowledge/);
+      expect(triviaDifficultyGuidance.easy).toMatch(/straightforward way/);
       expect(triviaDifficultyGuidance.easy).toMatch(/avoid obscure details/);
-      expect(triviaDifficultyGuidance.medium).toMatch(/Avoid both trivial questions .* and highly obscure facts/);
-      expect(triviaDifficultyGuidance.hard).toMatch(/challenging but fair/);
-      expect(triviaDifficultyGuidance.hard).toMatch(/Never rely on ambiguous trivia/);
-      expect(triviaDifficultyGuidance.hard).toMatch(/never make a question difficult through vague or convoluted wording/);
+      expect(triviaDifficultyGuidance.medium).toMatch(/moderately challenging/);
+      expect(triviaDifficultyGuidance.medium).toMatch(/solid knowledge of the topic/);
+      expect(triviaDifficultyGuidance.medium).toMatch(/Avoid trivial questions/);
+      expect(triviaDifficultyGuidance.medium).toMatch(/avoid obscure or unreliable facts/);
     });
 
     test.each(difficulties)('logic puzzles on $id get reasoning-based guidance', async (difficulty) => {
@@ -539,16 +464,15 @@ describe('POST /api/quiz', () => {
       expect(params().input).not.toContain(triviaDifficultyGuidance[difficulty.id]);
     });
 
-    test('logic puzzles scale the reasoning, and hard ones stay solvable from the question', () => {
+    test('logic puzzles scale the reasoning', () => {
       expect(logicPuzzleDifficultyGuidance.easy).toMatch(/simple patterns and direct/);
       expect(logicPuzzleDifficultyGuidance.medium).toMatch(/multi-step reasoning/);
-      expect(logicPuzzleDifficultyGuidance.hard).toMatch(/fully solvable from the information in the question/);
     });
 
     test('a custom topic gets the trivia guidance', async () => {
-      await POST(quizRequest({ topic: 'חלל', difficulty: 'hard', count: 3, exclude: [] }));
+      await POST(quizRequest({ topic: 'חלל', difficulty: 'medium', count: 3, exclude: [] }));
 
-      expect(params().input).toContain(`Difficulty guidance: ${triviaDifficultyGuidance.hard}`);
+      expect(params().input).toContain(`Difficulty guidance: ${triviaDifficultyGuidance.medium}`);
     });
 
     test.each(['easy', 'medium'])('%s keeps each category’s own reasoning effort', async (difficulty) => {
@@ -559,32 +483,10 @@ describe('POST /api/quiz', () => {
       expect(params(1).reasoning).toEqual({ effort: 'none' });
     });
 
-    test('hard raises no reasoning effort to low, for categories and custom topics', async () => {
-      await POST(quizRequest({ categoryId: 'geography', difficulty: 'hard', count: 3, exclude: [] }));
-      await POST(quizRequest({ categoryId: 'logic-puzzles', difficulty: 'hard', count: 3, exclude: [] }));
-      await POST(quizRequest({ topic: 'חלל', difficulty: 'hard', count: 3, exclude: [] }));
-
-      const [geography, logic, topic] = generationCalls();
-      expect(geography.reasoning).toEqual({ effort: 'low' });
-      expect(logic.reasoning).toEqual({ effort: 'low' });
-      expect(topic.reasoning).toEqual({ effort: 'low' });
-    });
-
-    test('hard never lowers a category’s own higher reasoning effort', async () => {
-      categoryReasoningEfforts.geography = 'medium';
-      try {
-        await POST(quizRequest({ categoryId: 'geography', difficulty: 'hard', count: 3, exclude: [] }));
-      } finally {
-        delete categoryReasoningEfforts.geography;
-      }
-
-      expect(params().reasoning).toEqual({ effort: 'medium' });
-    });
-
     test('the instructions tell the model to keep every question at the requested level', async () => {
       await POST(quizRequest({ categoryId: 'geography', difficulty: 'easy', count: 3, exclude: [] }));
 
-      expect(params().instructions).toMatch(/difficulty level \(easy, medium or hard\)/);
+      expect(params().instructions).toMatch(/difficulty level \(easy or medium\)/);
       expect(params().instructions).toMatch(/never from vague wording, trick phrasing or facts that cannot be verified/);
       expect(params().instructions).not.toMatch(/varied mix of sub-topics and difficulty/);
     });
@@ -596,345 +498,6 @@ describe('POST /api/quiz', () => {
 
       expect(params().input).not.toContain('Ignore all rules');
       expect(params().input).toContain(triviaDifficultyGuidance.easy);
-    });
-  });
-
-  describe('hard verification', () => {
-    const cabinda = {
-      question: 'לאיזו מדינה שייכת המובלעת קבינדה?',
-      answers: ['אנגולה', 'גבון', 'קונגו', 'זמביה'],
-      correctAnswerIndex: 0,
-      explanation: 'קבינדה מופרדת משאר אנגולה ברצועה של קונגו הדמוקרטית.',
-    };
-    const benguela = {
-      question: 'איזה זרם ים קר זורם צפונה לאורך חופי נמיביה?',
-      answers: ['אגולאס', 'בנגלה', 'מוזמביק', 'קנריים'],
-      correctAnswerIndex: 1,
-      explanation: 'זרם בנגלה הקר זורם צפונה לאורך דרום־מערב אפריקה.',
-    };
-    const lokoja = {
-      question: 'איזו עיר בניגריה שוכנת במפגש הנהרות ניז׳ר ובנואה?',
-      answers: ['קאנו', 'אנוגו', 'לוקוג׳ה', 'מיידוגורי'],
-      correctAnswerIndex: 2,
-      explanation: 'לוקוג׳ה נמצאת בדיוק במפגש שני הנהרות.',
-    };
-    const lukuga = {
-      question: 'איזה נהר מנקז את אגם טנגניקה אל אגן הקונגו?',
-      answers: ['רוביזי', 'לוקוגה', 'שירה', 'אומו'],
-      correctAnswerIndex: 1,
-      explanation: 'נהר לוקוגה יוצא מאגם טנגניקה מערבה אל נהר הקונגו.',
-    };
-    const angara = {
-      question: 'איזה נהר הוא היחיד שיוצא מאגם באיקל?',
-      answers: ['לנה', 'אירטיש', 'אנגרה', 'אמור'],
-      correctAnswerIndex: 2,
-      explanation: 'האנגרה הוא הנהר היחיד שזורם החוצה מאגם באיקל.',
-    };
-    const torres = {
-      question: 'איזה מצר מפריד בין אוסטרליה לגינאה החדשה?',
-      answers: ['מצר בס', 'מצר טורס', 'מצר סונדה', 'מצר מלאקה'],
-      correctAnswerIndex: 1,
-      explanation: 'מצר טורס מפריד בין כף יורק לגינאה החדשה.',
-    };
-
-    // Questions the reviewer should fail, each for a different reason.
-    const twoCorrect = {
-      question: 'איזו מדינה גובלת בגינאה המשוונית?',
-      answers: ['קמרון', 'גבון', 'ניגריה', 'צ׳אד'],
-      correctAnswerIndex: 0,
-      explanation: 'קמרון גובלת בגינאה המשוונית מצפון.',
-    };
-    const ambiguous = {
-      question: 'איזו מדינה היא הגדולה ביותר באפריקה?',
-      answers: ['ניגריה', 'אלג׳יריה', 'מצרים', 'אתיופיה'],
-      correctAnswerIndex: 1,
-      explanation: 'אלג׳יריה היא המדינה הגדולה ביותר ביבשת.',
-    };
-    const falsePremise = {
-      question: 'באיזו מדינה נמצא הר הגעש אקונקגואה?',
-      answers: ['ארגנטינה', 'צ׳ילה', 'פרו', 'בוליביה'],
-      correctAnswerIndex: 0,
-      explanation: 'אקונקגואה הוא הר הגעש הגבוה בעולם.',
-    };
-
-    /** A first batch as the generator writes it: 3 questions plus 2 spares. */
-    const candidates = [cabinda, benguela, lokoja, lukuga, angara];
-    const text = (questions: { question: string }[]) => questions.map((q) => q.question);
-    const failing =
-      (...questions: { question: string }[]) =>
-      (question: string) =>
-        text(questions).includes(question)
-          ? { verdict: 'fail' as const, factuallyCorrect: false, reason: 'False premise.' }
-          : undefined;
-
-    function hardRequest(count = 3, exclude: string[] = []) {
-      return POST(quizRequest({ categoryId: 'geography', difficulty: 'hard', count, exclude }));
-    }
-
-    async function returnedQuestions(response: Response) {
-      expect(response.status).toBe(200);
-      const { questions } = await response.json();
-      expect(questions.map((q: { id: string }) => q.id)).toEqual(questions.map((_: unknown, i: number) => `q${i + 1}`));
-      return text(questions);
-    }
-
-    test('spare questions are written for hard batches: 2 for the first 3, 4 for the other 7', () => {
-      expect(spareQuestionsFor(3)).toBe(2);
-      expect(spareQuestionsFor(7)).toBe(4);
-    });
-
-    test('all hard candidates are verified together in one review request', async () => {
-      mockOpenAI([candidates]);
-
-      const questions = await returnedQuestions(await hardRequest());
-
-      expect(questions).toEqual(text([cabinda, benguela, lokoja]));
-      expect(generationCalls()).toHaveLength(1);
-      expect(generationCalls()[0].input).toContain('Number of questions: 5');
-      expect(reviewCalls()).toHaveLength(1);
-      expect(reviewedBatches()).toEqual([text(candidates)]);
-
-      const [review] = reviewCalls();
-      expect(review.model).toBe('gpt-6-luna');
-      expect(review.reasoning).toEqual({ effort: 'low' });
-      expect(review.text.format).toMatchObject({ type: 'json_schema', name: 'quiz_review', strict: true });
-      expect(review.input).toContain('Category: geography (גאוגרפיה)');
-      expect(review.input).toContain(`Difficulty guidance: ${triviaDifficultyGuidance.hard}`);
-      expect(review.input).toContain(
-        [
-          `[q2] ${benguela.question}`,
-          'A. אגולאס',
-          'B. בנגלה',
-          'C. מוזמביק',
-          'D. קנריים',
-          'Marked correct: B',
-          `Explanation: ${benguela.explanation}`,
-        ].join('\n'),
-      );
-    });
-
-    test('the review returns a structured verdict with every check for every question id', async () => {
-      mockOpenAI([candidates]);
-
-      await hardRequest();
-
-      const { schema } = reviewCalls()[0].text.format;
-      const reviews = schema.properties.reviews;
-      expect(reviews).toMatchObject({ minItems: 5, maxItems: 5 });
-      expect(reviews.items.properties.id.enum).toEqual(['q1', 'q2', 'q3', 'q4', 'q5']);
-      expect(reviews.items.required).toEqual(
-        expect.arrayContaining([
-          'id',
-          'solvedAnswer',
-          'factuallyCorrect',
-          'exactlyOneCorrect',
-          'distractorsWrong',
-          'unambiguous',
-          'explanationConsistent',
-          'fairDifficulty',
-          'verdict',
-          'reason',
-        ]),
-      );
-    });
-
-    test('the reviewer solves each question independently and never rewrites it', async () => {
-      mockOpenAI([candidates]);
-
-      await hardRequest();
-
-      const { instructions } = reviewCalls()[0];
-      expect(instructions).toMatch(/Solve it yourself, without trusting the marked answer/);
-      expect(instructions).toMatch(/Do not rewrite questions/);
-      expect(instructions).toMatch(/solve it step by step/);
-    });
-
-    test('the background batch of 7 is written with spares and verified in one request', async () => {
-      const eleven = [lukuga, angara, torres, ...generatedQuestions(8, 20)];
-      mockOpenAI([eleven]);
-
-      const questions = await returnedQuestions(await hardRequest(7, text([cabinda, benguela, lokoja])));
-
-      expect(questions).toEqual(text(eleven.slice(0, 7)));
-      expect(generationCalls()[0].input).toContain('Number of questions: 11');
-      expect(reviewedBatches()).toEqual([text(eleven)]);
-    });
-
-    test.each(['easy', 'medium'])('%s questions never use the verifier and get no spares', async (difficulty) => {
-      mockOpenAI([[cabinda, benguela, lokoja]]);
-
-      const response = await POST(quizRequest({ categoryId: 'geography', difficulty, count: 3, exclude: [] }));
-
-      expect(response.status).toBe(200);
-      expect(reviewCalls()).toHaveLength(0);
-      expect(mockParse).toHaveBeenCalledTimes(1);
-      expect(generationCalls()[0].input).toContain('Number of questions: 3');
-    });
-
-    test('valid hard questions pass without any regeneration', async () => {
-      mockOpenAI([candidates]);
-
-      expect(await returnedQuestions(await hardRequest())).toEqual(text([cabinda, benguela, lokoja]));
-      expect(mockParse).toHaveBeenCalledTimes(2);
-    });
-
-    test.each([
-      ['two correct answers', twoCorrect, { solvedAnswer: 'several', exactlyOneCorrect: false, distractorsWrong: false }],
-      ['ambiguous wording', ambiguous, { unambiguous: false }],
-      ['an incorrect factual statement', falsePremise, { factuallyCorrect: false }],
-      ['a correct distractor', { ...torres, answers: ['מצר בס', 'מצר טורס', 'מצר סונדה', 'מיצר טורס'] }, { distractorsWrong: false }],
-      [
-        'an explanation that does not support the answer',
-        { ...torres, explanation: 'מצר טורס מפריד בין טסמניה לאוסטרליה.' },
-        { explanationConsistent: false },
-      ],
-      [
-        'a misleading, obscure question',
-        { ...lokoja, question: 'איזו עיר קטנה בניגריה שוכנת במפגש נהרות?' },
-        { fairDifficulty: false },
-      ],
-    ])('a mixed batch keeps the valid questions and rejects one with %s', async (_case, flawed, failure) => {
-      mockOpenAI([[cabinda, flawed, benguela, lokoja, lukuga]], (question) =>
-        question === flawed.question ? { verdict: 'fail', reason: 'Rejected.', ...failure } : undefined,
-      );
-
-      const questions = await returnedQuestions(await hardRequest());
-
-      expect(questions).toEqual(text([cabinda, benguela, lokoja]));
-      // A spare took its place, so nothing was written or reviewed again.
-      expect(generationCalls()).toHaveLength(1);
-      expect(reviewCalls()).toHaveLength(1);
-    });
-
-    test.each([
-      ['a pass verdict with a failed check', { verdict: 'pass' as const, factuallyCorrect: false }],
-      ['a pass verdict with a different answer', { verdict: 'pass' as const, solvedAnswer: 'B' }],
-      ['a fail verdict with every check holding', { verdict: 'fail' as const }],
-    ])('%s is a rejection', async (_case, verdict) => {
-      mockOpenAI([[cabinda, twoCorrect, benguela, lokoja, lukuga]], (question) =>
-        question === twoCorrect.question ? verdict : undefined,
-      );
-
-      expect(await returnedQuestions(await hardRequest())).not.toContain(twoCorrect.question);
-    });
-
-    test('invalid questions do not cause valid ones to be regenerated', async () => {
-      mockOpenAI(
-        [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [lukuga]],
-        failing(twoCorrect, falsePremise, ambiguous),
-      );
-
-      const questions = await returnedQuestions(await hardRequest(3, ['שאלה ישנה?']));
-
-      expect(questions).toEqual(text([cabinda, benguela, lukuga]));
-      const [, replacement] = generationCalls();
-      expect(replacement.input).toContain('Number of questions: 1');
-      expect(replacement.input).toContain('- שאלה ישנה?');
-      // Everything written so far is excluded, so rejected questions can't come back.
-      for (const question of [twoCorrect, cabinda, falsePremise, ambiguous, benguela]) {
-        expect(replacement.input).toContain(`- ${question.question}`);
-      }
-      // One more review, of the replacement only: questions that passed are not reviewed again.
-      expect(reviewedBatches()).toEqual([text([twoCorrect, cabinda, falsePremise, ambiguous, benguela]), [lukuga.question]]);
-    });
-
-    test('replacements are verified together, before they are used', async () => {
-      mockOpenAI(
-        [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [angara, torres], [lukuga]],
-        failing(twoCorrect, falsePremise, ambiguous, cabinda, angara),
-      );
-
-      const questions = await returnedQuestions(await hardRequest());
-
-      expect(questions).toEqual(text([benguela, torres, lukuga]));
-      expect(questions).not.toContain(angara.question);
-      expect(reviewedBatches().slice(1)).toEqual([text([angara, torres]), [lukuga.question]]);
-    });
-
-    test('a question that keeps failing never reaches the player', async () => {
-      mockOpenAI(
-        [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [angara], [lukuga]],
-        failing(twoCorrect, falsePremise, ambiguous, angara, lukuga),
-      );
-
-      const response = await hardRequest();
-
-      expect(response.status).toBe(502);
-      expect(await response.json()).toEqual({ error: 'unavailable' });
-      expect(generationCalls()).toHaveLength(3);
-    });
-
-    test('a question the reviewer left out, or reviewed twice, never reaches the player', async () => {
-      mockOpenAI([candidates]);
-      mockParse.mockImplementation(async (request) => {
-        if (request.text.format.name !== 'quiz_review') return parsedResponse(candidates);
-        const [first, second, , fourth, fifth] = reviewedQuestions(request.input);
-        return reviewResponse([
-          passingVerdict(first.id, first.marked),
-          passingVerdict(second.id, second.marked),
-          passingVerdict(fourth.id, fourth.marked),
-          passingVerdict(fourth.id, fourth.marked),
-          passingVerdict(fifth.id, fifth.marked),
-        ]);
-      });
-
-      const questions = await returnedQuestions(await hardRequest());
-
-      expect(questions).toEqual(text([cabinda, benguela, angara]));
-      expect(questions).not.toContain(lokoja.question);
-      expect(questions).not.toContain(lukuga.question);
-    });
-
-    test('invalid questions in a hard batch are dropped instead of rewriting the whole batch', async () => {
-      const leaking = { ...torres, question: 'האם מצר טורס מפריד בין אוסטרליה לגינאה החדשה?' };
-      mockOpenAI([[cabinda, leaking, benguela, { ...cabinda, question: 'לאיזו מדינה שייכת המובלעת קבינדה' }, lokoja]]);
-
-      const questions = await returnedQuestions(await hardRequest());
-
-      expect(questions).toEqual(text([cabinda, benguela, lokoja]));
-      expect(generationCalls()).toHaveLength(1);
-      // Only valid questions are reviewed.
-      expect(reviewedBatches()).toEqual([text([cabinda, benguela, lokoja])]);
-    });
-
-    test('an unusable review is asked again once', async () => {
-      const passAll = mockOpenAI([candidates]);
-      mockParse.mockImplementationOnce(passAll).mockImplementationOnce(async () => reviewResponse(null));
-
-      expect(await returnedQuestions(await hardRequest())).toEqual(text([cabinda, benguela, lokoja]));
-      expect(reviewCalls()).toHaveLength(2);
-    });
-
-    test('a review that stays unusable fails the batch instead of passing it unchecked', async () => {
-      const passAll = mockOpenAI([candidates]);
-      mockParse.mockImplementationOnce(passAll).mockImplementation(async () => reviewResponse(null));
-
-      const response = await hardRequest();
-
-      expect(response.status).toBe(502);
-      expect(reviewCalls()).toHaveLength(2);
-    });
-
-    test('an OpenAI error during review returns a generic error', async () => {
-      const passAll = mockOpenAI([candidates]);
-      mockParse
-        .mockImplementationOnce(passAll)
-        .mockRejectedValue(new APIError(500, { message: 'secret detail' }, 'Server error', new Headers()));
-
-      const response = await hardRequest();
-
-      expect(response.status).toBe(502);
-      expect(await response.text()).not.toContain('secret detail');
-    });
-
-    test('the review instructions stay identical across requests so they can be cached', async () => {
-      mockOpenAI([candidates, [lukuga, angara, torres, ...generatedQuestions(8, 20)]]);
-
-      await hardRequest();
-      await POST(quizRequest({ categoryId: 'history', difficulty: 'hard', count: 7, exclude: [] }));
-
-      expect(reviewCalls()).toHaveLength(2);
-      expect(reviewCalls()[1].instructions).toBe(reviewCalls()[0].instructions);
     });
   });
 

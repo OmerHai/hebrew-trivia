@@ -1,10 +1,12 @@
 import { Pressable, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
+import { difficulties } from '@/data/difficulties';
 import { borders, edge, radius, spacing, useTheme } from '@/theme';
 import type { Difficulty } from '@/types/difficulty';
 
-const METER_BARS = 3;
+/** One bar per level, so the meter always matches the levels on offer. */
+const METER_BARS = difficulties.length;
 
 type Props = {
   difficulty: Difficulty;
@@ -15,7 +17,7 @@ type Props = {
 
 /**
  * A difficulty level as a large card: its Hebrew name, a short description and
- * a three-bar meter, with the same physical bottom edge as the game's buttons.
+ * a small meter, with the same physical bottom edge as the game's buttons.
  */
 export function DifficultyOption({ difficulty, accentColor, onPress }: Props) {
   const { colors } = useTheme();
@@ -30,7 +32,7 @@ export function DifficultyOption({ difficulty, accentColor, onPress }: Props) {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.lg,
-        minHeight: 88,
+        minHeight: 104,
         paddingHorizontal: spacing.xl,
         paddingVertical: spacing.lg,
         borderRadius: radius.lg,
@@ -54,8 +56,8 @@ export function DifficultyOption({ difficulty, accentColor, onPress }: Props) {
             key={index}
             testID="difficulty-meter-bar"
             style={{
-              width: 8,
-              height: 12 + index * 8,
+              width: 10,
+              height: 16 + index * 12,
               borderRadius: radius.full,
               backgroundColor: index < difficulty.level ? accentColor : colors.track,
             }}

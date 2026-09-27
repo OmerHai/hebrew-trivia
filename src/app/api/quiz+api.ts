@@ -1,11 +1,7 @@
 import { findCategory } from '@/data/categories';
 import { findDifficulty } from '@/data/difficulties';
 import { categoryGenerationContexts, reasoningEffortFor } from '@/server/category-prompts';
-import {
-  difficultyGuidanceFor,
-  difficultyMinimumReasoningEfforts,
-  verifiedDifficulties,
-} from '@/server/difficulty-prompts';
+import { difficultyGuidanceFor } from '@/server/difficulty-prompts';
 import {
   generateQuizBatch,
   QuizGenerationError,
@@ -23,7 +19,7 @@ const STATUS_BY_FAILURE = { refused: 422, unavailable: 502, misconfigured: 500 }
 
 /**
  * POST /api/quiz with `{ categoryId }` or `{ topic }`, plus `difficulty`
- * (`easy`, `medium` or `hard`), `count` (questions to generate) and `exclude`
+ * (`easy` or `medium`), `count` (questions to generate) and `exclude`
  * (questions that must not repeat). The app only sends a category id and a
  * difficulty id; their generation guidance is looked up here and never taken
  * from the request. Free-text topics are not offered in the app for now.
@@ -78,8 +74,6 @@ async function readOptions(request: Request): Promise<QuizBatchOptions | null> {
     difficulty: {
       id: difficulty.id,
       guidance: difficultyGuidanceFor(difficulty.id, 'categoryId' in subject ? subject.categoryId : undefined),
-      minimumReasoningEffort: difficultyMinimumReasoningEfforts[difficulty.id],
-      verify: verifiedDifficulties.has(difficulty.id),
     },
     count,
     exclude: (exclude as string[]).map((item) => item.trim()).filter(Boolean),

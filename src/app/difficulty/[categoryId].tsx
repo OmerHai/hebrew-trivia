@@ -38,7 +38,7 @@ export default function DifficultyScreen() {
       <View style={{ alignItems: 'flex-start' }}>
         <CategoryBadge category={category} />
       </View>
-      <View style={{ gap: spacing.md }}>
+      <View style={{ gap: spacing.lg }}>
         {difficulties.map((difficulty) => (
           <DifficultyOption
             key={difficulty.id}

@@ -63,8 +63,9 @@ describe('question history', () => {
   test('every category and difficulty has its own history scope, keyed by their stable ids', () => {
     const scopes = categories.flatMap((category) => difficulties.map((difficulty) => historyScope(category.id, difficulty.id)));
 
-    expect(new Set(scopes).size).toBe(categories.length * 3);
-    expect(historyScope('football', 'hard')).toBe('category:football:hard');
+    expect(new Set(scopes).size).toBe(categories.length * 2);
+    expect(historyScope('football', 'easy')).toBe('category:football:easy');
+    expect(historyScope('football', 'medium')).toBe('category:football:medium');
   });
 
   test('neighbouring categories such as football and sports do not share history', async () => {
@@ -78,11 +79,11 @@ describe('question history', () => {
 
   test('each difficulty of a category keeps its own history', async () => {
     await addPlayedQuestions(historyScope('geography', 'easy'), ['מהי בירת צרפת?']);
-    await addPlayedQuestions(historyScope('geography', 'hard'), ['מהי בירת בורקינה פאסו?']);
+    await addPlayedQuestions(historyScope('geography', 'medium'), ['מהי בירת מונגוליה?']);
 
     expect(await getRecentQuestions(historyScope('geography', 'easy'))).toEqual(['מהי בירת צרפת?']);
-    expect(await getRecentQuestions(historyScope('geography', 'hard'))).toEqual(['מהי בירת בורקינה פאסו?']);
-    expect(await getRecentQuestions(historyScope('geography', 'medium'))).toEqual([]);
+    expect(await getRecentQuestions(historyScope('geography', 'medium'))).toEqual(['מהי בירת מונגוליה?']);
+    expect(await getRecentQuestions(historyScope('history', 'easy'))).toEqual([]);
   });
 
   test('the same question may be recorded under two difficulties without replacing either', async () => {

@@ -1,8 +1,6 @@
 // Server-only: how each difficulty level should shape the generated questions.
 // Sent to OpenAI but never to the player, so do not import this file from
 // screens or components.
-import type { ReasoningEffort } from 'openai/resources/shared';
-
 import type { DifficultyId } from '@/data/difficulties';
 
 /** Guidance for factual trivia: every category except logic puzzles, and free-text topics. */
@@ -14,14 +12,7 @@ export const triviaDifficultyGuidance = {
   ].join(' '),
   medium: [
     'Medium: moderately challenging questions that require solid knowledge of the topic, the level of a regular trivia fan.',
-    'Avoid both trivial questions almost everyone knows and highly obscure facts.',
-  ].join(' '),
-  hard: [
-    'Hard: challenging but fair questions for enthusiasts, using less obvious facts, deeper knowledge and closer wrong answers.',
-    'Go clearly beyond what a regular trivia fan knows: skip the facts a medium question would ask about.',
-    'Every question must still have exactly one clearly correct, verifiable answer.',
-    'Never rely on ambiguous trivia, and never make a question difficult through vague or convoluted wording or through obscure, unverifiable facts.',
-    'Harder facts are easier to get wrong: before writing a question, check that its premise is true, and avoid superlatives and counts that are disputed, tied or depend on the source.',
+    'Avoid trivial questions almost everyone knows, and avoid obscure or unreliable facts.',
   ].join(' '),
 } satisfies Record<DifficultyId, string>;
 
@@ -29,29 +20,7 @@ export const triviaDifficultyGuidance = {
 export const logicPuzzleDifficultyGuidance = {
   easy: 'Easy: simple patterns and direct, one-step deduction that most players solve quickly.',
   medium: 'Medium: puzzles that need multi-step reasoning, with two or three steps to reach the answer.',
-  hard: [
-    'Hard: more challenging reasoning that combines several steps or constraints,',
-    'but still fully solvable from the information in the question alone, with exactly one correct answer.',
-  ].join(' '),
 } satisfies Record<DifficultyId, string>;
-
-/**
- * The least reasoning a level gets, whatever its category's setting. Hard
- * questions ask about less familiar facts, and without reasoning the model
- * wrote false or disputed premises that validation cannot catch. The reviewer
- * doesn't make up for it: it catches only part of those errors, and writing
- * hard questions with no reasoning let several wrong answers through.
- */
-export const difficultyMinimumReasoningEfforts: Partial<Record<DifficultyId, ReasoningEffort>> = {
-  hard: 'low',
-};
-
-/**
- * Levels whose questions a second call fact-checks before they reach the
- * player (see `quiz-verifier.ts`). Easy and medium ask about familiar facts
- * and stay fast.
- */
-export const verifiedDifficulties: ReadonlySet<DifficultyId> = new Set<DifficultyId>(['hard']);
 
 /** The difficulty guidance for a category, or for a free-text topic when `categoryId` is omitted. */
 export function difficultyGuidanceFor(difficulty: DifficultyId, categoryId?: string): string {

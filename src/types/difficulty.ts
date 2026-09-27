@@ -6,6 +6,6 @@ export type Difficulty = {
   name: string;
   /** Short Hebrew line under the name on the difficulty screen. */
   description: string;
-  /** 1–3, drawn as a small meter next to the name. */
+  /** Position from 1 (easiest), drawn as a small meter next to the name. */
   level: number;
 };

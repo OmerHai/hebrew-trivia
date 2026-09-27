@@ -27,11 +27,11 @@ describe('<DifficultyScreen />', () => {
     expect(screen.queryByText('גאוגרפיה')).not.toBeOnTheScreen();
   });
 
-  test('offers exactly three levels, easiest first, each with a Hebrew description', async () => {
+  test('offers exactly two levels, easy first, each with a Hebrew description', async () => {
     await renderDifficulty();
 
     const options = screen.getAllByRole('button');
-    expect(options.map((option) => option.props.accessibilityLabel)).toEqual(['קל', 'בינוני', 'קשה']);
+    expect(options.map((option) => option.props.accessibilityLabel)).toEqual(['קל', 'בינוני']);
     for (const [index, difficulty] of difficulties.entries()) {
       expect(options[index]).toHaveTextContent(difficulty.name, { exact: false });
       expect(options[index]).toHaveTextContent(difficulty.description, { exact: false });
@@ -47,7 +47,7 @@ describe('<DifficultyScreen />', () => {
       const option = screen.getByRole('button', { name: difficulty.name });
       // Decorative: hidden from screen readers, which get the name and description.
       const bars = within(option).getAllByTestId('difficulty-meter-bar', { includeHiddenElements: true });
-      expect(bars).toHaveLength(3);
+      expect(bars).toHaveLength(2);
       expect(bars.filter((bar) => bar.props.style.backgroundColor === accent)).toHaveLength(difficulty.level);
     }
   });

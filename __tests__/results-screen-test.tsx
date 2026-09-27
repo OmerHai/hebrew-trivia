@@ -49,10 +49,10 @@ function renderResults(initialUrl: string) {
 
 describe('<ResultsScreen />', () => {
   test('shows the category, the difficulty, the score as one "7/10" string, and the answer track', async () => {
-    await renderResults('/results?categoryId=history&difficulty=hard&track=1101101011');
+    await renderResults('/results?categoryId=history&difficulty=medium&track=1101101011');
 
     expect(screen.getByText('היסטוריה')).toBeOnTheScreen();
-    expect(screen.getByLabelText('רמת קושי: קשה')).toHaveTextContent('קשה');
+    expect(screen.getByLabelText('רמת קושי: בינוני')).toHaveTextContent('בינוני');
     // A single text run keeps the number in order inside right-to-left text.
     expect(screen.getByLabelText('7 מתוך 10')).toHaveTextContent('7/10');
     expect(screen.getByRole('progressbar', { name: '7 תשובות נכונות מתוך 10' })).toBeOnTheScreen();
@@ -77,26 +77,26 @@ describe('<ResultsScreen />', () => {
   });
 
   test('"עוד סיבוב" starts a freshly generated quiz in the same category and difficulty', async () => {
-    const router = renderResults('/results?categoryId=history&difficulty=hard&track=1101101011');
+    const router = renderResults('/results?categoryId=history&difficulty=medium&track=1101101011');
     await router;
 
     await fireEvent.press(screen.getByRole('button', { name: 'עוד סיבוב' }));
 
     expect(router.getPathname()).toBe('/quiz/history');
-    expect(router.getSearchParams()).toEqual({ categoryId: 'history', difficulty: 'hard' });
+    expect(router.getSearchParams()).toEqual({ categoryId: 'history', difficulty: 'medium' });
     // A new game: back to the first question, nothing answered.
     expect(await screen.findByRole('progressbar', { name: 'שאלה 1 מתוך 10, 0 תשובות נכונות' })).toBeOnTheScreen();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       categoryId: 'history',
-      difficulty: 'hard',
+      difficulty: 'medium',
       count: 3,
       exclude: [],
     });
   });
 
   test('"נושא אחר" goes to the category selection', async () => {
-    const router = renderResults('/results?categoryId=history&difficulty=hard&track=1101101011');
+    const router = renderResults('/results?categoryId=history&difficulty=medium&track=1101101011');
     await router;
 
     await fireEvent.press(screen.getByRole('button', { name: 'נושא אחר' }));
@@ -106,8 +106,8 @@ describe('<ResultsScreen />', () => {
 
   test.each([
     ['an unknown category', '/results?categoryId=nope&difficulty=easy&track=1101101011'],
-    ['a malformed track', '/results?categoryId=history&difficulty=hard&track=12x'],
-    ['no track', '/results?categoryId=history&difficulty=hard'],
+    ['a malformed track', '/results?categoryId=history&difficulty=medium&track=12x'],
+    ['no track', '/results?categoryId=history&difficulty=medium'],
     ['no difficulty', '/results?categoryId=history&track=1101101011'],
     ['an unknown difficulty', '/results?categoryId=history&difficulty=expert&track=1101101011'],
   ])('with %s it offers to pick a topic instead of a score', async (_case, url) => {
