@@ -5,25 +5,28 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import type { ReasoningEffort } from 'openai/resources/shared';
 
 import { DEFAULT_REASONING_EFFORT } from '@/server/category-prompts';
+import type { DifficultyId } from '@/data/difficulties';
 import type { Question } from '@/types/question';
 import { generatedQuizSchema, quizBatchSchema } from '@/utils/quiz-schema';
 
 const MODEL = 'gpt-6-luna';
 const MAX_ATTEMPTS = 3;
 
-// Kept identical across requests (the per-request category or topic, count and
-// exclusions go in `input`) so the prompt prefix stays cacheable.
+// Kept identical across requests (the per-request category or topic, difficulty,
+// count and exclusions go in `input`) so the prompt prefix stays cacheable.
 const INSTRUCTIONS = `You write questions for a Hebrew mobile trivia game.
 - Each request is either for a built-in category, given with its id, Hebrew name and a focus describing what belongs in it, or for a free-text topic chosen by the player.
 - For a category, keep every question within its focus and follow any rules the focus adds; they take precedence over the general style rules below.
 - Write every question, answer and explanation in natural Hebrew, the way a native speaker would. Keep names and technical terms in their common form.
 - Keep the Hebrew grammatically consistent: the question's gender, number and person (e.g. זמר or זמרת, איזה or איזו, מי כתב or מי כתבה) must agree with the correct answer, and every answer must fit the question grammatically.
-- Write exactly the requested number of multiple-choice questions, with a varied mix of sub-topics and difficulty.
+- Every request has a difficulty level (easy, medium or hard) with guidance on what it means. Keep every question at that level.
+- Difficulty must come from what a question asks, never from vague wording, trick phrasing or facts that cannot be verified.
+- Write exactly the requested number of multiple-choice questions, with a varied mix of sub-topics.
 - Be concise: a question is one short sentence, and each answer is a few words at most.
 - Each question has exactly 4 distinct answers and exactly one correct answer. The wrong answers must be plausible but clearly wrong.
 - Never reveal or strongly hint at the correct answer in the question: the question must not contain the correct answer, its name or an obvious part of it.
 - Questions must be factual, unambiguous and verifiable. Avoid opinions, trick questions and facts likely to change over time.
-- Only ask about facts you are certain of. Prefer well-known people, works and events over obscure details, and make sure the explanation agrees with the correct answer.
+- Only ask about facts you are certain of, and make sure the explanation agrees with the correct answer. Prefer well-known people, works and events; at a higher difficulty, ask about less obvious facts about them rather than about obscure subjects.
 - Never repeat a question or ask about the same fact twice.
 - You may get a list of questions the player has already seen. Do not repeat any of them, do not reword them, and do not ask about the same facts again.
 - Vary the position of the correct answer.
@@ -53,8 +56,18 @@ export type QuizSubject =
     }
   | { topic: string };
 
+/** How hard the questions should be. */
+export type QuizDifficulty = {
+  id: DifficultyId;
+  /** What the level means for this subject; see `difficultyGuidanceFor`. */
+  guidance: string;
+  /** Raises the subject's reasoning effort to at least this; see `difficultyMinimumReasoningEfforts`. */
+  minimumReasoningEffort?: ReasoningEffort;
+};
+
 export type QuizBatchOptions = {
   subject: QuizSubject;
+  difficulty: QuizDifficulty;
   count: number;
   /** Questions the batch must not repeat or reword. */
   exclude: readonly string[];
@@ -90,12 +103,22 @@ function describeSubject(subject: QuizSubject): string[] {
   return [`Category: ${subject.categoryId} (${subject.name})`, `Category focus: ${subject.generationContext}`];
 }
 
-function reasoningEffort(subject: QuizSubject): ReasoningEffort {
-  return 'reasoningEffort' in subject ? subject.reasoningEffort : DEFAULT_REASONING_EFFORT;
+const EFFORT_ORDER: readonly ReasoningEffort[] = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+
+/** The subject's reasoning effort, raised to the difficulty's minimum when that is higher. */
+function reasoningEffort({ subject, difficulty }: QuizBatchOptions): ReasoningEffort {
+  const effort = 'reasoningEffort' in subject ? subject.reasoningEffort : DEFAULT_REASONING_EFFORT;
+  const minimum = difficulty.minimumReasoningEffort;
+  return minimum && EFFORT_ORDER.indexOf(minimum) > EFFORT_ORDER.indexOf(effort) ? minimum : effort;
 }
 
-function buildInput({ subject, count, exclude }: QuizBatchOptions) {
-  const lines = [...describeSubject(subject), `Number of questions: ${count}`];
+function buildInput({ subject, difficulty, count, exclude }: QuizBatchOptions) {
+  const lines = [
+    ...describeSubject(subject),
+    `Difficulty: ${difficulty.id}`,
+    `Difficulty guidance: ${difficulty.guidance}`,
+    `Number of questions: ${count}`,
+  ];
   if (exclude.length > 0) {
     lines.push('Questions the player has already seen (do not repeat or reword them):');
     lines.push(...exclude.map((question) => `- ${question.replace(/\s+/g, ' ')}`));
@@ -112,7 +135,7 @@ async function requestBatch(openai: OpenAI, options: QuizBatchOptions, attempt: 
       model: MODEL,
       instructions: INSTRUCTIONS,
       input: buildInput(options),
-      reasoning: { effort: reasoningEffort(options.subject) },
+      reasoning: { effort: reasoningEffort(options) },
       text: { format: zodTextFormat(generatedQuizSchema(options.count), 'trivia_quiz') },
     });
   } catch (error) {
@@ -130,7 +153,8 @@ async function requestBatch(openai: OpenAI, options: QuizBatchOptions, attempt: 
     // Development-only cost and latency diagnostics; never sent to the player.
     console.log('OpenAI quiz batch', {
       subject: 'categoryId' in options.subject ? options.subject.categoryId : 'custom-topic',
-      reasoningEffort: reasoningEffort(options.subject),
+      difficulty: options.difficulty.id,
+      reasoningEffort: reasoningEffort(options),
       count: options.count,
       excluded: options.exclude.length,
       attempt,

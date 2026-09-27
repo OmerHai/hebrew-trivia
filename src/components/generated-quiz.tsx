@@ -13,6 +13,7 @@ import { ProgressTrack } from '@/components/progress-track';
 import { QUIZ_CONTENT_STYLE } from '@/components/quiz-layout';
 import { QuizSkeleton } from '@/components/quiz-skeleton';
 import { ThemedText } from '@/components/themed-text';
+import type { DifficultyId } from '@/data/difficulties';
 import { useGeneratedQuiz } from '@/hooks/use-generated-quiz';
 import { useQuiz } from '@/hooks/use-quiz';
 import { motion, radius, spacing, useTheme } from '@/theme';
@@ -35,11 +36,11 @@ export const WAITING_MESSAGE = 'מכינים עוד שאלות…';
 /** How much of the feedback panel to bring into view after answering. */
 const FEEDBACK_PEEK = 120;
 
-type Props = { categoryId: string };
+type Props = { categoryId: string; difficulty: DifficultyId };
 
-/** Requests a freshly generated quiz for the category and lets the player play it. */
-export function GeneratedQuiz({ categoryId }: Props) {
-  const quiz = useGeneratedQuiz(categoryId);
+/** Requests a freshly generated quiz for the category and difficulty and lets the player play it. */
+export function GeneratedQuiz({ categoryId, difficulty }: Props) {
+  const quiz = useGeneratedQuiz(categoryId, difficulty);
 
   if (quiz.status === 'loading') {
     return <QuizSkeleton total={QUESTIONS_PER_QUIZ} message={LOADING_MESSAGE} />;
@@ -52,6 +53,7 @@ export function GeneratedQuiz({ categoryId }: Props) {
   return (
     <Quiz
       categoryId={categoryId}
+      difficulty={difficulty}
       questions={quiz.questions}
       total={quiz.total}
       backgroundError={quiz.backgroundError}
@@ -99,6 +101,7 @@ function confirmLeave(onLeave: () => void) {
 
 type QuizProps = {
   categoryId: string;
+  difficulty: DifficultyId;
   /** The questions ready so far. */
   questions: Question[];
   total: number;
@@ -107,7 +110,7 @@ type QuizProps = {
   onRetry: () => void;
 };
 
-function Quiz({ categoryId, questions, total, backgroundError, onRetry }: QuizProps) {
+function Quiz({ categoryId, difficulty, questions, total, backgroundError, onRetry }: QuizProps) {
   const { colors } = useTheme();
   const navigation = useNavigation();
   const quiz = useQuiz(questions, total);
@@ -122,11 +125,11 @@ function Quiz({ categoryId, questions, total, backgroundError, onRetry }: QuizPr
   useEffect(() => {
     if (exit === 'results') {
       // Replace so going back from the results doesn't return to a finished quiz.
-      router.replace({ pathname: '/results', params: { categoryId, track: encodeTrack(results) } });
+      router.replace({ pathname: '/results', params: { categoryId, difficulty, track: encodeTrack(results) } });
     } else if (exit === 'categories') {
       router.dismissTo('/categories');
     }
-  }, [exit, categoryId, results]);
+  }, [exit, categoryId, difficulty, results]);
 
   const scrollRef = useRef<ScrollView>(null);
   const viewport = useRef({ height: 0, scrollY: 0, answersTop: 0 });

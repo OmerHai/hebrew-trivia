@@ -3,23 +3,25 @@ import { ScrollView, View } from 'react-native';
 
 import { ActionBar } from '@/components/action-bar';
 import { Button } from '@/components/button';
-import { CategoryLabel } from '@/components/category-label';
+import { CategoryBadge } from '@/components/category-badge';
 import { MessageScreen } from '@/components/message-screen';
 import { ProgressTrack } from '@/components/progress-track';
 import { ThemedText } from '@/components/themed-text';
 import { findCategory } from '@/data/categories';
+import { findDifficulty } from '@/data/difficulties';
 import { layout, radius, spacing, useTheme } from '@/theme';
 import { decodeTrack } from '@/utils/answer-track';
 import { QUESTIONS_PER_QUIZ } from '@/utils/quiz-schema';
 import { resultMessage } from '@/utils/result-message';
 
 export default function ResultsScreen() {
-  const params = useLocalSearchParams<{ categoryId: string; track: string }>();
-  const { colors, tints, shadows } = useTheme();
+  const params = useLocalSearchParams<{ categoryId: string; difficulty: string; track: string }>();
+  const { colors, shadows } = useTheme();
   const category = findCategory(params.categoryId);
+  const difficulty = findDifficulty(params.difficulty);
   const results = decodeTrack(params.track, QUESTIONS_PER_QUIZ);
 
-  if (!category || !results) {
+  if (!category || !difficulty || !results) {
     return (
       <MessageScreen
         icon={{ ios: 'questionmark.circle', android: 'help' }}
@@ -55,15 +57,7 @@ export default function ResultsScreen() {
             backgroundColor: colors.surface,
             boxShadow: shadows.raised,
           }}>
-          <View
-            style={{
-              paddingHorizontal: spacing.md,
-              paddingVertical: spacing.xs,
-              borderRadius: radius.full,
-              backgroundColor: tints[category.tint].background,
-            }}>
-            <CategoryLabel category={category} />
-          </View>
+          <CategoryBadge category={category} difficulty={difficulty} />
 
           <View style={{ alignItems: 'center', gap: spacing.xs }}>
             {/* One string, so the bidi algorithm keeps "7/10" in order inside RTL text. */}
@@ -91,7 +85,12 @@ export default function ResultsScreen() {
       <ActionBar divider={false}>
         <Button
           title="עוד סיבוב"
-          onPress={() => router.replace({ pathname: '/quiz/[categoryId]', params: { categoryId: category.id } })}
+          onPress={() =>
+            router.replace({
+              pathname: '/quiz/[categoryId]',
+              params: { categoryId: category.id, difficulty: difficulty.id },
+            })
+          }
         />
         <Button title="נושא אחר" variant="secondary" onPress={() => router.dismissTo('/categories')} />
       </ActionBar>

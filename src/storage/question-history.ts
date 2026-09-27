@@ -5,19 +5,22 @@ import { normalizeText } from '@/utils/question-text';
 const STORAGE_KEY = 'played-questions/v1';
 /** How many played questions are kept on the device, across all categories. */
 export const MAX_HISTORY_SIZE = 100;
-/** How many recent questions of the same category are sent as exclusions. */
+/** How many recent questions of the same category and difficulty are sent as exclusions. */
 export const RELEVANT_HISTORY_SIZE = 30;
 
 /** A played question. Only the question text is kept — no answers, scores or secrets. */
 type HistoryEntry = {
-  /** The category the question was played in; see `historyScope`. */
+  /** The category and difficulty the question was played at; see `historyScope`. */
   scope: string;
   question: string;
 };
 
-/** Identifies the history relevant to a game: each category, by its stable id, has its own. */
-export function historyScope(categoryId: string): string {
-  return `category:${categoryId}`;
+/**
+ * Identifies the history relevant to a game: each category and difficulty, by
+ * their stable ids, has its own, so an easy game never holds back hard questions.
+ */
+export function historyScope(categoryId: string, difficulty: string): string {
+  return `category:${categoryId}:${difficulty}`;
 }
 
 async function readHistory(): Promise<HistoryEntry[]> {

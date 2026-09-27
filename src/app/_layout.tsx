@@ -45,6 +45,10 @@ export default function RootLayout() {
           name="categories"
           options={{ title: 'בחרו נושא', headerLargeTitle: true, headerLargeTitleShadowVisible: false }}
         />
+        <Stack.Screen
+          name="difficulty/[categoryId]"
+          options={{ title: 'בחרו רמת קושי', headerLargeTitle: true, headerLargeTitleShadowVisible: false }}
+        />
       </Stack>
     </>
   );
