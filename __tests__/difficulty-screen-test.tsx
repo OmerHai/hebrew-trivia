@@ -4,13 +4,20 @@ import * as ReactNative from 'react-native';
 import CategoriesScreen from '@/app/categories';
 import DifficultyScreen from '@/app/difficulty/[categoryId]';
 import HomeScreen from '@/app/index';
+import StatisticsScreen from '@/app/statistics';
 import RootLayout from '@/app/_layout';
 import { difficulties } from '@/data/difficulties';
 import { categoryTints, palette } from '@/theme';
 
 function renderDifficulty(categoryId = 'geography') {
   return renderRouter(
-    { _layout: RootLayout, index: HomeScreen, categories: CategoriesScreen, 'difficulty/[categoryId]': DifficultyScreen },
+    {
+      _layout: RootLayout,
+      index: HomeScreen,
+      categories: CategoriesScreen,
+      'difficulty/[categoryId]': DifficultyScreen,
+      statistics: StatisticsScreen,
+    },
     { initialUrl: `/difficulty/${categoryId}` },
   );
 }

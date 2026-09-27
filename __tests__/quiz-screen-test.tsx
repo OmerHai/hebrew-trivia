@@ -8,8 +8,11 @@ import DifficultyScreen from '@/app/difficulty/[categoryId]';
 import HomeScreen from '@/app/index';
 import QuizScreen from '@/app/quiz/[categoryId]';
 import ResultsScreen from '@/app/results';
+import StatisticsScreen from '@/app/statistics';
 import RootLayout from '@/app/_layout';
 import { LOADING_MESSAGE, WAITING_MESSAGE } from '@/components/generated-quiz';
+import * as gameResults from '@/storage/game-results';
+import { getCompletedGames } from '@/storage/game-results';
 import { getRecentQuestions } from '@/storage/question-history';
 import { palette } from '@/theme';
 import type { Question } from '@/types/question';
@@ -161,6 +164,7 @@ function renderQuiz(initialUrl = '/quiz/geography?difficulty=medium') {
       'difficulty/[categoryId]': DifficultyScreen,
       'quiz/[categoryId]': QuizScreen,
       results: ResultsScreen,
+      statistics: StatisticsScreen,
     },
     { initialUrl },
   );
@@ -777,5 +781,162 @@ describe('<QuizScreen /> leaving a game', () => {
     await fireEvent.press(await screen.findByRole('button', { name: 'נושא אחר' }));
 
     expect(router.getPathname()).toBe('/categories');
+  });
+});
+
+describe('<QuizScreen /> statistics', () => {
+  /** Answers all ten questions of `questions`, right at the `correct` indexes, and opens the results. */
+  async function playToResults(questions = geography, correct = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]) {
+    for (let index = 0; index < 10; index++) {
+      await screen.findByRole('header', { name: questions[index].question });
+      const answer = correct.includes(index) ? correctAnswer(index) : wrongAnswer(index);
+      await answerAndContinue(answer);
+    }
+    await screen.findByRole('button', { name: 'עוד סיבוב' });
+  }
+
+  /** The stored games once pending writes have settled. */
+  async function completedGames() {
+    await act(async () => {});
+    return getCompletedGames();
+  }
+
+  test('completing a game records exactly one result, then shows the results', async () => {
+    const { router } = await renderLoadedQuiz('/quiz/geography?difficulty=easy');
+
+    await playToResults(geography, [0, 2, 3, 5, 6, 8, 9]);
+
+    expect(router.getPathname()).toBe('/results');
+    const games = await completedGames();
+    expect(games).toEqual([
+      {
+        id: expect.any(String),
+        categoryId: 'geography',
+        difficulty: 'easy',
+        score: 7,
+        total: 10,
+        completedAt: expect.any(String),
+      },
+    ]);
+    expect(Number.isNaN(Date.parse(games[0].completedAt))).toBe(false);
+  });
+
+  test('the result is saved once, even on a double tap, before the results are shown', async () => {
+    let saved!: () => void;
+    const record = jest
+      .spyOn(gameResults, 'recordCompletedGame')
+      .mockImplementation(() => new Promise<void>((resolve) => (saved = resolve)));
+    const { router } = await renderLoadedQuiz();
+    for (let index = 0; index < 9; index++) {
+      await screen.findByRole('header', { name: geography[index].question });
+      await answerAndContinue(correctAnswer(index));
+    }
+    await fireEvent.press(await screen.findByRole('button', { name: correctAnswer(9) }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'לתוצאות' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'לתוצאות' }));
+
+    expect(record).toHaveBeenCalledTimes(1);
+    // Still saving: the results wait for it.
+    expect(router.getPathname()).toBe('/quiz/geography');
+
+    await act(async () => saved());
+
+    expect(router.getPathname()).toBe('/results');
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  test('staying on the results screen does not record the game again', async () => {
+    await renderLoadedQuiz();
+    await playToResults();
+
+    await act(async () => appRouter.setParams({ track: '1111111111' }));
+
+    expect(await completedGames()).toHaveLength(1);
+  });
+
+  test('an abandoned game records nothing', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    const router = renderQuiz('/categories');
+    await router;
+    await fireEvent.press(screen.getByRole('button', { name: 'גאוגרפיה' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'בינוני' }));
+    for (let index = 0; index < 9; index++) {
+      await screen.findByRole('header', { name: geography[index].question });
+      await answerAndContinue(correctAnswer(index));
+    }
+
+    await act(async () => appRouter.back());
+    const [, leave] = alert.mock.calls[0][2]!;
+    await act(async () => leave.onPress?.());
+
+    expect(router.getPathname()).toBe('/difficulty/geography');
+    expect(await completedGames()).toEqual([]);
+  });
+
+  test('a game that fails while loading records nothing', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(502, { error: 'unavailable' }));
+
+    await renderQuiz();
+
+    expect(await screen.findByRole('button', { name: 'לנסות שוב' })).toBeOnTheScreen();
+    expect(await completedGames()).toEqual([]);
+  });
+
+  test('a game cut short by a failure mid-way records nothing', async () => {
+    fetchMock.mockImplementation((_url: string, init: RequestInit) =>
+      JSON.parse(init.body as string).count === 3
+        ? respondByBatch(init)
+        : Promise.resolve(jsonResponse(502, { error: 'unavailable' })),
+    );
+    const router = renderQuiz('/categories');
+    await router;
+    await fireEvent.press(screen.getByRole('button', { name: 'גאוגרפיה' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'בינוני' }));
+    await screen.findByRole('header', { name: geography[0].question });
+
+    await answerAndContinue(correctAnswer(0));
+    await answerAndContinue(correctAnswer(1));
+    await answerAndContinue(correctAnswer(2));
+    await fireEvent.press(await screen.findByRole('button', { name: 'לבחור נושא אחר' }));
+
+    expect(router.getPathname()).toBe('/categories');
+    expect(await completedGames()).toEqual([]);
+  });
+
+  test('"עוד סיבוב" records another game only once that game is completed', async () => {
+    await renderLoadedQuiz();
+    await playToResults(geography, [0, 1, 2, 3, 4]);
+    const [first] = await completedGames();
+
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => respondByBatch(init, moreGeography));
+    await fireEvent.press(screen.getByRole('button', { name: 'עוד סיבוב' }));
+    await screen.findByRole('header', { name: moreGeography[0].question });
+    for (let index = 0; index < 9; index++) {
+      await screen.findByRole('header', { name: moreGeography[index].question });
+      await answerAndContinue(correctAnswer(index));
+    }
+    await fireEvent.press(screen.getByRole('button', { name: correctAnswer(9) }));
+
+    // Nine answered and the tenth revealed: not completed yet.
+    expect(await completedGames()).toEqual([first]);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'לתוצאות' }));
+    await screen.findByRole('button', { name: 'עוד סיבוב' });
+
+    const games = await completedGames();
+    expect(games.map((game) => game.score)).toEqual([5, 10]);
+    expect(games[1].id).not.toBe(first.id);
+  });
+
+  test('a completed game appears in the statistics', async () => {
+    await renderLoadedQuiz('/quiz/history?difficulty=medium');
+    await playToResults(geography, [0, 1, 2, 3, 4, 5, 6, 7]);
+
+    await act(async () => appRouter.push('/statistics'));
+
+    expect(await screen.findByLabelText('משחקים: 1')).toBeOnTheScreen();
+    expect(screen.getByLabelText('בינוני: משחק אחד, ממוצע 8 מתוך 10')).toBeOnTheScreen();
+    expect(screen.getByLabelText('היסטוריה: משחק אחד, ממוצע 8 מתוך 10, שיא 8 מתוך 10')).toBeOnTheScreen();
   });
 });

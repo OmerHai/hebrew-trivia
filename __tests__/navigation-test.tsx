@@ -5,6 +5,7 @@ import CategoriesScreen from '@/app/categories';
 import DifficultyScreen from '@/app/difficulty/[categoryId]';
 import HomeScreen from '@/app/index';
 import QuizScreen from '@/app/quiz/[categoryId]';
+import StatisticsScreen from '@/app/statistics';
 import RootLayout from '@/app/_layout';
 import { categories } from '@/data/categories';
 import { difficulties } from '@/data/difficulties';
@@ -43,6 +44,7 @@ function renderApp(initialUrl = '/categories') {
       categories: CategoriesScreen,
       'difficulty/[categoryId]': DifficultyScreen,
       'quiz/[categoryId]': QuizScreen,
+      statistics: StatisticsScreen,
     },
     { initialUrl },
   );
