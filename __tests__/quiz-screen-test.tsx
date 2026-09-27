@@ -615,6 +615,68 @@ describe('<QuizScreen /> leaving a game', () => {
     expect(router.getPathname()).toBe('/categories');
   });
 
+  /**
+   * Holds back the request for batch `count` until the test resolves it,
+   * keeping its abort signal. Like a response already on its way, it still
+   * resolves after an abort.
+   */
+  function holdRequest(count: number) {
+    const held: { signal?: AbortSignal; respond?: (response: Response) => void } = {};
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      if (JSON.parse(init.body as string).count !== count) return respondByBatch(init);
+      held.signal = init.signal ?? undefined;
+      return new Promise<Response>((resolve) => (held.respond = resolve));
+    });
+    return held;
+  }
+
+  test('leaving while the first batch is loading aborts it and ignores a late response', async () => {
+    const held = holdRequest(3);
+    const router = renderQuiz('/categories');
+    await router;
+    await fireEvent.press(screen.getByRole('button', { name: 'גאוגרפיה' }));
+    expect(await screen.findByText(LOADING_MESSAGE)).toBeOnTheScreen();
+    await waitFor(() => expect(held.respond).toBeDefined());
+    expect(held.signal?.aborted).toBe(false);
+
+    await act(async () => appRouter.back());
+
+    expect(held.signal?.aborted).toBe(true);
+    expect(router.getPathname()).toBe('/categories');
+
+    await act(async () => held.respond!(jsonResponse(200, { questions: firstBatch })));
+
+    expect(router.getPathname()).toBe('/categories');
+    expect(screen.queryByRole('header', { name: geography[0].question })).not.toBeOnTheScreen();
+    expect(screen.queryByText(LOADING_MESSAGE)).not.toBeOnTheScreen();
+    // The late batch never joined a game: nothing recorded, and no request for the rest.
+    expect(await recentQuestions('category:geography')).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('leaving while the rest of the questions are loading aborts that request and ignores a late response', async () => {
+    const held = holdRequest(7);
+    const { router } = await renderFromCategories();
+    await waitFor(() => expect(held.respond).toBeDefined());
+    expect(held.signal?.aborted).toBe(false);
+
+    await act(async () => appRouter.back());
+
+    expect(held.signal?.aborted).toBe(true);
+    expect(router.getPathname()).toBe('/categories');
+
+    await act(async () => held.respond!(jsonResponse(200, { questions: secondBatch })));
+
+    expect(router.getPathname()).toBe('/categories');
+    expect(screen.queryByRole('header', { name: geography[0].question })).not.toBeOnTheScreen();
+    expect(screen.queryByRole('progressbar')).not.toBeOnTheScreen();
+    // Only the first batch, which was played, is recorded.
+    expect(await recentQuestions('category:geography')).toEqual(
+      firstBatch.map((question) => question.question).reverse(),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   test('finishing the game goes to the results without asking', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     const { router } = await renderFromCategories();
