@@ -57,40 +57,71 @@ function params(call = 0) {
   return mockParse.mock.calls[call][0];
 }
 
-type Review = { check: string; solvedAnswer: string; problems: string[]; verdict: 'pass' | 'fail' };
+type Verdict = {
+  id: string;
+  check: string;
+  solvedAnswer: string;
+  factuallyCorrect: boolean;
+  exactlyOneCorrect: boolean;
+  distractorsWrong: boolean;
+  unambiguous: boolean;
+  explanationConsistent: boolean;
+  fairDifficulty: boolean;
+  verdict: 'pass' | 'fail';
+  reason: string;
+};
 
-function reviewResponse(review: Review | null) {
+function reviewResponse(reviews: Verdict[] | null) {
   return {
     status: 'completed',
     output: [{ type: 'message', content: [{ type: 'output_text', text: '{}' }] }],
-    output_parsed: review,
-    usage: { input_tokens: 700, input_tokens_details: { cached_tokens: 0 }, output_tokens: 120 },
+    output_parsed: reviews && { reviews },
+    usage: { input_tokens: 1500, input_tokens_details: { cached_tokens: 0 }, output_tokens: 900 },
   };
 }
 
-/** Reads the question and its marked answer back from a review request. */
-function reviewedQuestion(input: string) {
+/** Reads the questions, with their ids and marked answers, back from a review request. */
+function reviewedQuestions(input: string) {
+  const questions = [...input.matchAll(/^\[(\S+)\] (.+)$/gm)].map((match) => ({ id: match[1], question: match[2] }));
+  const marked = [...input.matchAll(/^Marked correct: ([A-D])$/gm)].map((match) => match[1]);
+  return questions.map((question, index) => ({ ...question, marked: marked[index] }));
+}
+
+function passingVerdict(id: string, marked: string): Verdict {
   return {
-    question: input.match(/^Question: (.+)$/m)![1],
-    marked: input.match(/^Marked correct: ([A-D])$/m)![1],
+    id,
+    check: 'Checked.',
+    solvedAnswer: marked,
+    factuallyCorrect: true,
+    exactlyOneCorrect: true,
+    distractorsWrong: true,
+    unambiguous: true,
+    explanationConsistent: true,
+    fairDifficulty: true,
+    verdict: 'pass',
+    reason: '',
   };
 }
 
 /**
  * Stands in for OpenAI. Generation requests get the next of `batches` (then
- * `firstBatch`); a review passes its question with the marked answer, unless
- * `verdictFor` overrides the review of that question. Returns the
+ * `firstBatch`); a review passes every question with its marked answer,
+ * unless `verdictFor` overrides the verdict for a question. Returns the
  * implementation so tests can combine it with one-off responses.
  */
 function mockOpenAI(
   batches: unknown[][],
-  verdictFor: (question: string) => Partial<Review> | undefined = () => undefined,
+  verdictFor: (question: string) => Partial<Verdict> | undefined = () => undefined,
 ) {
   const queue = [...batches];
   const implementation = async (request: { input: string; text: { format: { name: string } } }) => {
-    if (request.text.format.name !== 'question_review') return parsedResponse(queue.shift() ?? firstBatch);
-    const { question, marked } = reviewedQuestion(request.input);
-    return reviewResponse({ check: 'Checked.', solvedAnswer: marked, problems: [], verdict: 'pass', ...verdictFor(question) });
+    if (request.text.format.name !== 'quiz_review') return parsedResponse(queue.shift() ?? firstBatch);
+    return reviewResponse(
+      reviewedQuestions(request.input).map(({ id, question, marked }) => ({
+        ...passingVerdict(id, marked),
+        ...verdictFor(question),
+      })),
+    );
   };
   mockParse.mockImplementation(implementation);
   return implementation;
@@ -101,8 +132,10 @@ function callsNamed(name: string) {
 }
 
 const generationCalls = () => callsNamed('trivia_quiz');
-const reviewCalls = () => callsNamed('question_review');
-const reviewedTexts = () => reviewCalls().map((request) => reviewedQuestion(request.input).question);
+const reviewCalls = () => callsNamed('quiz_review');
+/** The questions each review request covered, one list per request. */
+const reviewedBatches = () =>
+  reviewCalls().map((request) => reviewedQuestions(request.input).map((reviewed) => reviewed.question));
 
 describe('POST /api/quiz', () => {
   const originalKey = process.env.OPENAI_API_KEY;
@@ -618,10 +651,10 @@ describe('POST /api/quiz', () => {
       explanation: 'אלג׳יריה היא המדינה הגדולה ביותר ביבשת.',
     };
     const falsePremise = {
-      question: 'איזו מדינה חולקת עם צרפת גבול יבשתי באי היספניולה?',
-      answers: ['האיטי', 'קובה', 'ג׳מייקה', 'פוארטו ריקו'],
+      question: 'באיזו מדינה נמצא הר הגעש אקונקגואה?',
+      answers: ['ארגנטינה', 'צ׳ילה', 'פרו', 'בוליביה'],
       correctAnswerIndex: 0,
-      explanation: 'האיטי גובלת בצרפת בהיספניולה.',
+      explanation: 'אקונקגואה הוא הר הגעש הגבוה בעולם.',
     };
 
     /** A first batch as the generator writes it: 3 questions plus 2 spares. */
@@ -630,7 +663,9 @@ describe('POST /api/quiz', () => {
     const failing =
       (...questions: { question: string }[]) =>
       (question: string) =>
-        text(questions).includes(question) ? { verdict: 'fail' as const, problems: ['factual_error'] } : undefined;
+        text(questions).includes(question)
+          ? { verdict: 'fail' as const, factuallyCorrect: false, reason: 'False premise.' }
+          : undefined;
 
     function hardRequest(count = 3, exclude: string[] = []) {
       return POST(quizRequest({ categoryId: 'geography', difficulty: 'hard', count, exclude }));
@@ -648,7 +683,7 @@ describe('POST /api/quiz', () => {
       expect(spareQuestionsFor(7)).toBe(4);
     });
 
-    test('every hard question is reviewed on its own, with its answers, marked answer and explanation', async () => {
+    test('all hard candidates are verified together in one review request', async () => {
       mockOpenAI([candidates]);
 
       const questions = await returnedQuestions(await hardRequest());
@@ -656,42 +691,65 @@ describe('POST /api/quiz', () => {
       expect(questions).toEqual(text([cabinda, benguela, lokoja]));
       expect(generationCalls()).toHaveLength(1);
       expect(generationCalls()[0].input).toContain('Number of questions: 5');
-      expect(reviewedTexts()).toEqual(text(candidates));
+      expect(reviewCalls()).toHaveLength(1);
+      expect(reviewedBatches()).toEqual([text(candidates)]);
 
-      const review = reviewCalls()[1];
+      const [review] = reviewCalls();
       expect(review.model).toBe('gpt-6-luna');
       expect(review.reasoning).toEqual({ effort: 'low' });
-      expect(review.text.format).toMatchObject({ type: 'json_schema', name: 'question_review', strict: true });
+      expect(review.text.format).toMatchObject({ type: 'json_schema', name: 'quiz_review', strict: true });
       expect(review.input).toContain('Category: geography (גאוגרפיה)');
       expect(review.input).toContain(`Difficulty guidance: ${triviaDifficultyGuidance.hard}`);
       expect(review.input).toContain(
-        [`Question: ${benguela.question}`, 'A. אגולאס', 'B. בנגלה', 'C. מוזמביק', 'D. קנריים', 'Marked correct: B'].join('\n'),
+        [
+          `[q2] ${benguela.question}`,
+          'A. אגולאס',
+          'B. בנגלה',
+          'C. מוזמביק',
+          'D. קנריים',
+          'Marked correct: B',
+          `Explanation: ${benguela.explanation}`,
+        ].join('\n'),
       );
-      expect(review.input).toContain(`Explanation: ${benguela.explanation}`);
     });
 
-    test('the review checks every criterion and solves the question independently', async () => {
+    test('the review returns a structured verdict with every check for every question id', async () => {
+      mockOpenAI([candidates]);
+
+      await hardRequest();
+
+      const { schema } = reviewCalls()[0].text.format;
+      const reviews = schema.properties.reviews;
+      expect(reviews).toMatchObject({ minItems: 5, maxItems: 5 });
+      expect(reviews.items.properties.id.enum).toEqual(['q1', 'q2', 'q3', 'q4', 'q5']);
+      expect(reviews.items.required).toEqual(
+        expect.arrayContaining([
+          'id',
+          'solvedAnswer',
+          'factuallyCorrect',
+          'exactlyOneCorrect',
+          'distractorsWrong',
+          'unambiguous',
+          'explanationConsistent',
+          'fairDifficulty',
+          'verdict',
+          'reason',
+        ]),
+      );
+    });
+
+    test('the reviewer solves each question independently and never rewrites it', async () => {
       mockOpenAI([candidates]);
 
       await hardRequest();
 
       const { instructions } = reviewCalls()[0];
-      expect(instructions).toMatch(/Solve it yourself first, without trusting the marked answer/);
-      for (const problem of [
-        'factual_error',
-        'no_correct_answer',
-        'multiple_correct_answers',
-        'distractor_correct',
-        'ambiguous_wording',
-        'explanation_mismatch',
-        'obscure_or_misleading',
-      ]) {
-        expect(instructions).toContain(problem);
-      }
+      expect(instructions).toMatch(/Solve it yourself, without trusting the marked answer/);
+      expect(instructions).toMatch(/Do not rewrite questions/);
       expect(instructions).toMatch(/solve it step by step/);
     });
 
-    test('the background batch of 7 is written with spares and reviewed independently', async () => {
+    test('the background batch of 7 is written with spares and verified in one request', async () => {
       const eleven = [lukuga, angara, torres, ...generatedQuestions(8, 20)];
       mockOpenAI([eleven]);
 
@@ -699,11 +757,10 @@ describe('POST /api/quiz', () => {
 
       expect(questions).toEqual(text(eleven.slice(0, 7)));
       expect(generationCalls()[0].input).toContain('Number of questions: 11');
-      expect(reviewCalls()).toHaveLength(11);
-      expect(reviewedTexts()).not.toContain(cabinda.question);
+      expect(reviewedBatches()).toEqual([text(eleven)]);
     });
 
-    test.each(['easy', 'medium'])('%s questions are not reviewed and get no spares', async (difficulty) => {
+    test.each(['easy', 'medium'])('%s questions never use the verifier and get no spares', async (difficulty) => {
       mockOpenAI([[cabinda, benguela, lokoja]]);
 
       const response = await POST(quizRequest({ categoryId: 'geography', difficulty, count: 3, exclude: [] }));
@@ -718,52 +775,50 @@ describe('POST /api/quiz', () => {
       mockOpenAI([candidates]);
 
       expect(await returnedQuestions(await hardRequest())).toEqual(text([cabinda, benguela, lokoja]));
-      expect(generationCalls()).toHaveLength(1);
+      expect(mockParse).toHaveBeenCalledTimes(2);
     });
 
     test.each([
-      ['two correct answers', twoCorrect, { solvedAnswer: 'several', problems: ['multiple_correct_answers', 'distractor_correct'] }],
-      ['ambiguous wording', ambiguous, { problems: ['ambiguous_wording'] }],
-      ['an incorrect factual statement', falsePremise, { solvedAnswer: 'none', problems: ['factual_error'] }],
-      [
-        'a misleading, obscure question',
-        { ...lokoja, question: 'איזו עיר קטנה בניגריה שוכנת במפגש נהרות?' },
-        { problems: ['obscure_or_misleading'] },
-      ],
+      ['two correct answers', twoCorrect, { solvedAnswer: 'several', exactlyOneCorrect: false, distractorsWrong: false }],
+      ['ambiguous wording', ambiguous, { unambiguous: false }],
+      ['an incorrect factual statement', falsePremise, { factuallyCorrect: false }],
+      ['a correct distractor', { ...torres, answers: ['מצר בס', 'מצר טורס', 'מצר סונדה', 'מיצר טורס'] }, { distractorsWrong: false }],
       [
         'an explanation that does not support the answer',
         { ...torres, explanation: 'מצר טורס מפריד בין טסמניה לאוסטרליה.' },
-        { problems: ['explanation_mismatch'] },
+        { explanationConsistent: false },
       ],
-    ])('a question with %s is rejected', async (_case, flawed, failure) => {
+      [
+        'a misleading, obscure question',
+        { ...lokoja, question: 'איזו עיר קטנה בניגריה שוכנת במפגש נהרות?' },
+        { fairDifficulty: false },
+      ],
+    ])('a mixed batch keeps the valid questions and rejects one with %s', async (_case, flawed, failure) => {
       mockOpenAI([[cabinda, flawed, benguela, lokoja, lukuga]], (question) =>
-        question === flawed.question ? { verdict: 'fail', ...failure } : undefined,
+        question === flawed.question ? { verdict: 'fail', reason: 'Rejected.', ...failure } : undefined,
       );
 
       const questions = await returnedQuestions(await hardRequest());
 
       expect(questions).toEqual(text([cabinda, benguela, lokoja]));
-      // A spare took its place, so nothing had to be written again.
+      // A spare took its place, so nothing was written or reviewed again.
       expect(generationCalls()).toHaveLength(1);
+      expect(reviewCalls()).toHaveLength(1);
     });
 
-    test('a pass verdict is not enough when the reviewer reaches a different answer', async () => {
+    test.each([
+      ['a pass verdict with a failed check', { verdict: 'pass' as const, factuallyCorrect: false }],
+      ['a pass verdict with a different answer', { verdict: 'pass' as const, solvedAnswer: 'B' }],
+      ['a fail verdict with every check holding', { verdict: 'fail' as const }],
+    ])('%s is a rejection', async (_case, verdict) => {
       mockOpenAI([[cabinda, twoCorrect, benguela, lokoja, lukuga]], (question) =>
-        question === twoCorrect.question ? { verdict: 'pass', solvedAnswer: 'B' } : undefined,
+        question === twoCorrect.question ? verdict : undefined,
       );
 
       expect(await returnedQuestions(await hardRequest())).not.toContain(twoCorrect.question);
     });
 
-    test('a pass verdict listing a problem is treated as a failure', async () => {
-      mockOpenAI([[cabinda, ambiguous, benguela, lokoja, lukuga]], (question) =>
-        question === ambiguous.question ? { verdict: 'pass', problems: ['ambiguous_wording'] } : undefined,
-      );
-
-      expect(await returnedQuestions(await hardRequest())).not.toContain(ambiguous.question);
-    });
-
-    test('when more fail than there are spares, only the missing questions are written again', async () => {
+    test('invalid questions do not cause valid ones to be regenerated', async () => {
       mockOpenAI(
         [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [lukuga]],
         failing(twoCorrect, falsePremise, ambiguous),
@@ -779,24 +834,24 @@ describe('POST /api/quiz', () => {
       for (const question of [twoCorrect, cabinda, falsePremise, ambiguous, benguela]) {
         expect(replacement.input).toContain(`- ${question.question}`);
       }
-      // Questions that passed are not reviewed again.
-      expect(reviewedTexts()).toEqual([...text([twoCorrect, cabinda, falsePremise, ambiguous, benguela]), lukuga.question]);
+      // One more review, of the replacement only: questions that passed are not reviewed again.
+      expect(reviewedBatches()).toEqual([text([twoCorrect, cabinda, falsePremise, ambiguous, benguela]), [lukuga.question]]);
     });
 
-    test('replacements are reviewed before they are used', async () => {
+    test('replacements are verified together, before they are used', async () => {
       mockOpenAI(
-        [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [angara], [lukuga]],
-        failing(twoCorrect, falsePremise, ambiguous, angara),
+        [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [angara, torres], [lukuga]],
+        failing(twoCorrect, falsePremise, ambiguous, cabinda, angara),
       );
 
       const questions = await returnedQuestions(await hardRequest());
 
-      expect(questions).toEqual(text([cabinda, benguela, lukuga]));
+      expect(questions).toEqual(text([benguela, torres, lukuga]));
       expect(questions).not.toContain(angara.question);
-      expect(reviewedTexts().slice(-2)).toEqual(text([angara, lukuga]));
+      expect(reviewedBatches().slice(1)).toEqual([text([angara, torres]), [lukuga.question]]);
     });
 
-    test('a question that keeps failing is never returned unverified', async () => {
+    test('a question that keeps failing never reaches the player', async () => {
       mockOpenAI(
         [[twoCorrect, cabinda, falsePremise, ambiguous, benguela], [angara], [lukuga]],
         failing(twoCorrect, falsePremise, ambiguous, angara, lukuga),
@@ -809,6 +864,27 @@ describe('POST /api/quiz', () => {
       expect(generationCalls()).toHaveLength(3);
     });
 
+    test('a question the reviewer left out, or reviewed twice, never reaches the player', async () => {
+      mockOpenAI([candidates]);
+      mockParse.mockImplementation(async (request) => {
+        if (request.text.format.name !== 'quiz_review') return parsedResponse(candidates);
+        const [first, second, , fourth, fifth] = reviewedQuestions(request.input);
+        return reviewResponse([
+          passingVerdict(first.id, first.marked),
+          passingVerdict(second.id, second.marked),
+          passingVerdict(fourth.id, fourth.marked),
+          passingVerdict(fourth.id, fourth.marked),
+          passingVerdict(fifth.id, fifth.marked),
+        ]);
+      });
+
+      const questions = await returnedQuestions(await hardRequest());
+
+      expect(questions).toEqual(text([cabinda, benguela, angara]));
+      expect(questions).not.toContain(lokoja.question);
+      expect(questions).not.toContain(lukuga.question);
+    });
+
     test('invalid questions in a hard batch are dropped instead of rewriting the whole batch', async () => {
       const leaking = { ...torres, question: 'האם מצר טורס מפריד בין אוסטרליה לגינאה החדשה?' };
       mockOpenAI([[cabinda, leaking, benguela, { ...cabinda, question: 'לאיזו מדינה שייכת המובלעת קבינדה' }, lokoja]]);
@@ -818,7 +894,7 @@ describe('POST /api/quiz', () => {
       expect(questions).toEqual(text([cabinda, benguela, lokoja]));
       expect(generationCalls()).toHaveLength(1);
       // Only valid questions are reviewed.
-      expect(reviewedTexts()).toEqual(text([cabinda, benguela, lokoja]));
+      expect(reviewedBatches()).toEqual([text([cabinda, benguela, lokoja])]);
     });
 
     test('an unusable review is asked again once', async () => {
@@ -826,20 +902,17 @@ describe('POST /api/quiz', () => {
       mockParse.mockImplementationOnce(passAll).mockImplementationOnce(async () => reviewResponse(null));
 
       expect(await returnedQuestions(await hardRequest())).toEqual(text([cabinda, benguela, lokoja]));
-      expect(reviewCalls()).toHaveLength(6);
-      expect(reviewedTexts().filter((question) => question === cabinda.question)).toHaveLength(2);
+      expect(reviewCalls()).toHaveLength(2);
     });
 
-    test('a question whose review stays unusable counts as failed', async () => {
-      mockOpenAI([candidates]);
-      const implementation = mockParse.getMockImplementation()!;
-      mockParse.mockImplementation(async (request) =>
-        request.text.format.name === 'question_review' && request.input.includes(cabinda.question)
-          ? reviewResponse(null)
-          : implementation(request),
-      );
+    test('a review that stays unusable fails the batch instead of passing it unchecked', async () => {
+      const passAll = mockOpenAI([candidates]);
+      mockParse.mockImplementationOnce(passAll).mockImplementation(async () => reviewResponse(null));
 
-      expect(await returnedQuestions(await hardRequest())).toEqual(text([benguela, lokoja, lukuga]));
+      const response = await hardRequest();
+
+      expect(response.status).toBe(502);
+      expect(reviewCalls()).toHaveLength(2);
     });
 
     test('an OpenAI error during review returns a generic error', async () => {
@@ -860,7 +933,8 @@ describe('POST /api/quiz', () => {
       await hardRequest();
       await POST(quizRequest({ categoryId: 'history', difficulty: 'hard', count: 7, exclude: [] }));
 
-      expect(new Set(reviewCalls().map((request) => request.instructions)).size).toBe(1);
+      expect(reviewCalls()).toHaveLength(2);
+      expect(reviewCalls()[1].instructions).toBe(reviewCalls()[0].instructions);
     });
   });
 

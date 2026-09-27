@@ -38,7 +38,9 @@ export const logicPuzzleDifficultyGuidance = {
 /**
  * The least reasoning a level gets, whatever its category's setting. Hard
  * questions ask about less familiar facts, and without reasoning the model
- * wrote false or disputed premises that validation cannot catch.
+ * wrote false or disputed premises that validation cannot catch. The reviewer
+ * doesn't make up for it: it catches only part of those errors, and writing
+ * hard questions with no reasoning let several wrong answers through.
  */
 export const difficultyMinimumReasoningEfforts: Partial<Record<DifficultyId, ReasoningEffort>> = {
   hard: 'low',

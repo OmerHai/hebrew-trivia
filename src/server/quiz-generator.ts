@@ -8,12 +8,12 @@ import type { ReasoningEffort } from 'openai/resources/shared';
 import type { DifficultyId } from '@/data/difficulties';
 import { DEFAULT_REASONING_EFFORT } from '@/server/category-prompts';
 import { MODEL } from '@/server/openai-model';
-import { reviewQuestion, type QuestionReview } from '@/server/quiz-verifier';
+import { reviewQuestions, type QuestionReview } from '@/server/quiz-verifier';
 import type { Question } from '@/types/question';
 import { generatedQuizSchema, quizBatchSchema } from '@/utils/quiz-schema';
 
 const MAX_ATTEMPTS = 3;
-/** Review calls per question before an unusable review counts as a failure. */
+/** Review calls per round before an unusable review gives up the batch. */
 const MAX_REVIEW_ATTEMPTS = 2;
 /**
  * Extra questions written for a verified batch of `count`, so a rejected
@@ -112,14 +112,7 @@ type CallStats = {
   reasoningTokens: number;
 };
 
-type BatchStats = {
-  generation: CallStats;
-  /** Summed over reviews that run in parallel; `verificationWaitMs` is the time actually spent waiting. */
-  verification: CallStats;
-  verificationWaitMs: number;
-  reviewed: number;
-  rejected: number;
-};
+type BatchStats = { generation: CallStats; verification: CallStats; reviewed: number; rejected: number };
 
 function emptyCallStats(): CallStats {
   return { calls: 0, ms: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
@@ -157,7 +150,6 @@ export async function generateQuizBatch(options: QuizBatchOptions): Promise<Ques
       difficulty: options.difficulty.id,
       count: options.count,
       totalMs: Date.now() - startedAt,
-      verificationWaitMs: stats.verificationWaitMs,
       reviewed: stats.reviewed,
       rejected: stats.rejected,
       generation: stats.generation,
@@ -168,7 +160,7 @@ export async function generateQuizBatch(options: QuizBatchOptions): Promise<Ques
 }
 
 function newBatchStats(): BatchStats {
-  return { generation: emptyCallStats(), verification: emptyCallStats(), verificationWaitMs: 0, reviewed: 0, rejected: 0 };
+  return { generation: emptyCallStats(), verification: emptyCallStats(), reviewed: 0, rejected: 0 };
 }
 
 /**
@@ -193,12 +185,12 @@ async function generateValidBatch(
 
 /**
  * Writes a few spare questions (see `spareQuestionsFor`) and reviews them all
- * in parallel, keeping the first `count` that pass. Questions that fail the
+ * in one request, keeping the first `count` that pass. Questions that fail the
  * usual validation are dropped like rejected ones instead of rewriting the
  * whole batch. Only when too few pass are the missing questions written again,
- * and each of those is reviewed too before it is used. Questions that passed
- * are never rewritten, and rejected ones are excluded from later rounds so
- * they can't come back.
+ * and those are reviewed together in one more request before they are used.
+ * Questions that passed are never rewritten, and rejected ones are excluded
+ * from later rounds so they can't come back.
  */
 async function generateVerifiedBatch(
   openai: OpenAI,
@@ -216,14 +208,12 @@ async function generateVerifiedBatch(
   let candidates = await writeCandidates(options.count + spareQuestionsFor(options.count));
 
   for (let round = 0; ; round++) {
-    const reviewStartedAt = Date.now();
-    const reviews = await Promise.all(candidates.map((question) => review(openai, options, question, stats)));
-    stats.verificationWaitMs += Date.now() - reviewStartedAt;
+    const reviews = await review(openai, options, candidates, stats);
     stats.reviewed += candidates.length;
 
     for (const [index, question] of candidates.entries()) {
       const result = reviews[index];
-      if (result?.passed) {
+      if (result.passed) {
         accepted.push(question);
         continue;
       }
@@ -234,9 +224,9 @@ async function generateVerifiedBatch(
           round,
           question: question.question,
           markedAnswer: question.answers[question.correctAnswerIndex],
-          solvedAnswer: result?.solvedAnswer ?? 'unusable review',
-          problems: result?.problems ?? [],
-          check: result?.check ?? '',
+          solvedAnswer: result.solvedAnswer,
+          failedChecks: result.failedChecks,
+          reason: result.reason,
         });
       }
     }
@@ -252,20 +242,20 @@ async function generateVerifiedBatch(
 }
 
 /**
- * Reviews one question, asking again once if the review comes back unusable.
- * Resolves to `null` (a failure) when it still can't be read.
+ * Reviews `questions` in one request, asking again once if the review comes
+ * back unusable. Throws when it still can't be read: nothing unchecked may pass.
  */
 async function review(
   openai: OpenAI,
   options: QuizBatchOptions,
-  question: Question,
+  questions: readonly Question[],
   stats: BatchStats,
-): Promise<QuestionReview | null> {
-  for (let attempt = 1; attempt <= MAX_REVIEW_ATTEMPTS; attempt++) {
+): Promise<QuestionReview[]> {
+  for (let attempt = 1; ; attempt++) {
     const startedAt = Date.now();
     let result;
     try {
-      result = await reviewQuestion(openai, describeRequest(options), question);
+      result = await reviewQuestions(openai, describeRequest(options), questions);
     } catch (error) {
       if (error instanceof OpenAI.APIError) {
         console.error('OpenAI review request failed', { status: error.status, requestId: error.requestID });
@@ -273,9 +263,9 @@ async function review(
       throw new QuizGenerationError('unavailable');
     }
     recordCall(stats.verification, startedAt, result.usage);
-    if (result.review) return result.review;
+    if (result.reviews) return result.reviews;
+    if (attempt >= MAX_REVIEW_ATTEMPTS) throw new QuizGenerationError('unavailable');
   }
-  return null;
 }
 
 function describeSubject(subject: QuizSubject): string[] {
