@@ -16,6 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import type { DifficultyId } from '@/data/difficulties';
 import { useGeneratedQuiz } from '@/hooks/use-generated-quiz';
 import { useQuiz } from '@/hooks/use-quiz';
+import { createGameId, recordCompletedGame } from '@/storage/game-results';
 import { motion, radius, spacing, useTheme } from '@/theme';
 import type { Question } from '@/types/question';
 import { encodeTrack } from '@/utils/answer-track';
@@ -117,6 +118,10 @@ function Quiz({ categoryId, difficulty, questions, total, backgroundError, onRet
   const { question, questionIndex, selectedIndex, isAnswered, results } = quiz;
   // Where the player is heading once they leave on purpose; no confirmation then.
   const [exit, setExit] = useState<'results' | 'categories' | null>(null);
+  // One id per game: "עוד סיבוב" mounts a new quiz, and with it a new game.
+  const [gameId] = useState(createGameId);
+  // Set synchronously, so a double tap on "לתוצאות" can't record the game twice.
+  const finishing = useRef(false);
 
   usePreventRemove(results.length > 0 && exit === null, ({ data }) =>
     confirmLeave(() => navigation.dispatch(data.action)),
@@ -173,8 +178,23 @@ function Quiz({ categoryId, difficulty, questions, total, backgroundError, onRet
     );
   };
 
+  /** Records the finished game (once), then goes to the results. */
+  const finish = async () => {
+    if (finishing.current || results.length !== quiz.total) return;
+    finishing.current = true;
+    await recordCompletedGame({
+      id: gameId,
+      categoryId,
+      difficulty,
+      score: quiz.score,
+      total: quiz.total,
+      completedAt: new Date().toISOString(),
+    });
+    setExit('results');
+  };
+
   const handleNext = () => {
-    if (quiz.isLastQuestion) setExit('results');
+    if (quiz.isLastQuestion) void finish();
     else quiz.nextQuestion();
   };
 

@@ -5,6 +5,7 @@ import DifficultyScreen from '@/app/difficulty/[categoryId]';
 import HomeScreen from '@/app/index';
 import QuizScreen from '@/app/quiz/[categoryId]';
 import ResultsScreen from '@/app/results';
+import StatisticsScreen from '@/app/statistics';
 import RootLayout from '@/app/_layout';
 import { difficulties } from '@/data/difficulties';
 import type { Question } from '@/types/question';
@@ -42,6 +43,7 @@ function renderResults(initialUrl: string) {
       'difficulty/[categoryId]': DifficultyScreen,
       'quiz/[categoryId]': QuizScreen,
       results: ResultsScreen,
+      statistics: StatisticsScreen,
     },
     { initialUrl },
   );

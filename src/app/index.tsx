@@ -56,6 +56,7 @@ export default function HomeScreen() {
 
       <ActionBar divider={false}>
         <Button title="בואו נשחק" onPress={() => router.push('/categories')} />
+        <Button title="סטטיסטיקות" variant="secondary" onPress={() => router.push('/statistics')} />
         <ThemedText variant="caption" tone="secondary" style={{ textAlign: 'center' }}>
           {`${categories.length} נושאים · שאלות חדשות בכל סיבוב`}
         </ThemedText>
