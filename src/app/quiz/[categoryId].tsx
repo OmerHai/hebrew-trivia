@@ -1,14 +1,16 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, router, Stack, useLocalSearchParams } from 'expo-router';
 
 import { Button } from '@/components/button';
 import { CategoryLabel } from '@/components/category-label';
 import { GeneratedQuiz } from '@/components/generated-quiz';
 import { MessageScreen } from '@/components/message-screen';
 import { findCategory } from '@/data/categories';
+import { findDifficulty } from '@/data/difficulties';
 
 export default function QuizScreen() {
-  const { categoryId } = useLocalSearchParams<{ categoryId: string }>();
-  const category = findCategory(categoryId);
+  const params = useLocalSearchParams<{ categoryId: string; difficulty?: string }>();
+  const category = findCategory(params.categoryId);
+  const difficulty = findDifficulty(params.difficulty);
 
   if (!category) {
     return (
@@ -21,10 +23,20 @@ export default function QuizScreen() {
     );
   }
 
+  if (!difficulty) {
+    // E.g. an old link without a level: let the player pick one.
+    return <Redirect href={{ pathname: '/difficulty/[categoryId]', params: { categoryId: category.id } }} />;
+  }
+
   return (
     <>
-      <Stack.Screen options={{ title: category.name, headerTitle: () => <CategoryLabel category={category} /> }} />
-      <GeneratedQuiz categoryId={category.id} />
+      <Stack.Screen
+        options={{
+          title: category.name,
+          headerTitle: () => <CategoryLabel category={category} difficulty={difficulty} />,
+        }}
+      />
+      <GeneratedQuiz categoryId={category.id} difficulty={difficulty.id} />
     </>
   );
 }

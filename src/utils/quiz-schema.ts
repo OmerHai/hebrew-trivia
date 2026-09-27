@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { DifficultyId } from '@/data/difficulties';
 import { normalizeText, revealsAnswer } from '@/utils/question-text';
 
 export const QUESTIONS_PER_QUIZ = 10;
@@ -13,10 +14,10 @@ export const MAX_EXCLUDED_QUESTION_LENGTH = 300;
 
 /**
  * One generation request from the app: `count` new questions for a predefined
- * category that must not repeat any of the `exclude` questions (recently played
- * ones and those already in this game).
+ * category at a difficulty level that must not repeat any of the `exclude`
+ * questions (recently played ones and those already in this game).
  */
-export type QuizBatchRequest = { categoryId: string; count: number; exclude: string[] };
+export type QuizBatchRequest = { categoryId: string; difficulty: DifficultyId; count: number; exclude: string[] };
 
 // Structured Outputs supports `pattern` but not `minLength`, so patterns keep
 // strings non-empty; question and explanation must contain Hebrew letters.

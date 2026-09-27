@@ -29,7 +29,9 @@ export default function CategoriesScreen() {
             <CategoryTile
               key={category.id}
               category={category}
-              onPress={() => router.push({ pathname: '/quiz/[categoryId]', params: { categoryId: category.id } })}
+              onPress={() =>
+                router.push({ pathname: '/difficulty/[categoryId]', params: { categoryId: category.id } })
+              }
             />
           ))}
         </View>

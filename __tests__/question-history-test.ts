@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { categories } from '@/data/categories';
+import { difficulties } from '@/data/difficulties';
 import {
   addPlayedQuestions,
   getRecentQuestions,
@@ -52,27 +53,45 @@ describe('question history', () => {
   });
 
   test('category histories are kept separate', async () => {
-    await addPlayedQuestions(historyScope('geography'), ['מהי בירת צרפת?']);
-    await addPlayedQuestions(historyScope('technology'), ['מי ייסד את מיקרוסופט?']);
+    await addPlayedQuestions(historyScope('geography', 'medium'), ['מהי בירת צרפת?']);
+    await addPlayedQuestions(historyScope('technology', 'medium'), ['מי ייסד את מיקרוסופט?']);
 
-    expect(await getRecentQuestions(historyScope('geography'))).toEqual(['מהי בירת צרפת?']);
-    expect(await getRecentQuestions(historyScope('technology'))).toEqual(['מי ייסד את מיקרוסופט?']);
+    expect(await getRecentQuestions(historyScope('geography', 'medium'))).toEqual(['מהי בירת צרפת?']);
+    expect(await getRecentQuestions(historyScope('technology', 'medium'))).toEqual(['מי ייסד את מיקרוסופט?']);
   });
 
-  test('every category has its own history scope, keyed by its stable id', () => {
-    const scopes = categories.map((category) => historyScope(category.id));
+  test('every category and difficulty has its own history scope, keyed by their stable ids', () => {
+    const scopes = categories.flatMap((category) => difficulties.map((difficulty) => historyScope(category.id, difficulty.id)));
 
-    expect(new Set(scopes).size).toBe(categories.length);
-    expect(historyScope('football')).toBe('category:football');
+    expect(new Set(scopes).size).toBe(categories.length * 2);
+    expect(historyScope('football', 'easy')).toBe('category:football:easy');
+    expect(historyScope('football', 'medium')).toBe('category:football:medium');
   });
 
   test('neighbouring categories such as football and sports do not share history', async () => {
-    await addPlayedQuestions(historyScope('football'), ['מי זכתה במונדיאל 2018?']);
-    await addPlayedQuestions(historyScope('sports'), ['כמה שחקנים יש בקבוצת כדורסל על המגרש?']);
+    await addPlayedQuestions(historyScope('football', 'medium'), ['מי זכתה במונדיאל 2018?']);
+    await addPlayedQuestions(historyScope('sports', 'medium'), ['כמה שחקנים יש בקבוצת כדורסל על המגרש?']);
 
-    expect(await getRecentQuestions(historyScope('football'))).toEqual(['מי זכתה במונדיאל 2018?']);
-    expect(await getRecentQuestions(historyScope('sports'))).toEqual(['כמה שחקנים יש בקבוצת כדורסל על המגרש?']);
-    expect(await getRecentQuestions(historyScope('logic-puzzles'))).toEqual([]);
+    expect(await getRecentQuestions(historyScope('football', 'medium'))).toEqual(['מי זכתה במונדיאל 2018?']);
+    expect(await getRecentQuestions(historyScope('sports', 'medium'))).toEqual(['כמה שחקנים יש בקבוצת כדורסל על המגרש?']);
+    expect(await getRecentQuestions(historyScope('logic-puzzles', 'medium'))).toEqual([]);
+  });
+
+  test('each difficulty of a category keeps its own history', async () => {
+    await addPlayedQuestions(historyScope('geography', 'easy'), ['מהי בירת צרפת?']);
+    await addPlayedQuestions(historyScope('geography', 'medium'), ['מהי בירת מונגוליה?']);
+
+    expect(await getRecentQuestions(historyScope('geography', 'easy'))).toEqual(['מהי בירת צרפת?']);
+    expect(await getRecentQuestions(historyScope('geography', 'medium'))).toEqual(['מהי בירת מונגוליה?']);
+    expect(await getRecentQuestions(historyScope('history', 'easy'))).toEqual([]);
+  });
+
+  test('the same question may be recorded under two difficulties without replacing either', async () => {
+    await addPlayedQuestions(historyScope('geography', 'easy'), ['מהי בירת צרפת?']);
+    await addPlayedQuestions(historyScope('geography', 'medium'), ['מהי בירת צרפת?']);
+
+    expect(await getRecentQuestions(historyScope('geography', 'easy'))).toEqual(['מהי בירת צרפת?']);
+    expect(await getRecentQuestions(historyScope('geography', 'medium'))).toEqual(['מהי בירת צרפת?']);
   });
 
   test('a question played again moves to the front instead of being stored twice', async () => {

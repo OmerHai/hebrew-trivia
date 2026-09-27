@@ -4,12 +4,14 @@ import * as Haptics from 'expo-haptics';
 import { Alert } from 'react-native';
 
 import CategoriesScreen from '@/app/categories';
+import DifficultyScreen from '@/app/difficulty/[categoryId]';
 import HomeScreen from '@/app/index';
 import QuizScreen from '@/app/quiz/[categoryId]';
 import ResultsScreen from '@/app/results';
 import RootLayout from '@/app/_layout';
 import { LOADING_MESSAGE, WAITING_MESSAGE } from '@/components/generated-quiz';
 import { getRecentQuestions } from '@/storage/question-history';
+import { palette } from '@/theme';
 import type { Question } from '@/types/question';
 
 // Keep the generated order so tests know which question is shown.
@@ -150,12 +152,13 @@ function wrongAnswer(index: number) {
 
 // renderRouter attaches its route helpers to the returned promise, so callers
 // keep a reference to it and await it separately.
-function renderQuiz(initialUrl = '/quiz/geography') {
+function renderQuiz(initialUrl = '/quiz/geography?difficulty=medium') {
   return renderRouter(
     {
       _layout: RootLayout,
       index: HomeScreen,
       categories: CategoriesScreen,
+      'difficulty/[categoryId]': DifficultyScreen,
       'quiz/[categoryId]': QuizScreen,
       results: ResultsScreen,
     },
@@ -215,12 +218,31 @@ describe('<QuizScreen /> generation', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/quiz');
     expect(init.method).toBe('POST');
-    expect(requestBody(0)).toEqual({ categoryId: 'geography', count: 3, exclude: [] });
+    expect(requestBody(0)).toEqual({ categoryId: 'geography', difficulty: 'medium', count: 3, exclude: [] });
     expect(requestBody(1)).toEqual({
       categoryId: 'geography',
+      difficulty: 'medium',
       count: 7,
       exclude: firstBatch.map((question) => question.question),
     });
+  });
+
+  test.each(['easy', 'medium'])('both batches of a %s quiz ask for that difficulty', async (difficulty) => {
+    await renderLoadedQuiz(`/quiz/geography?difficulty=${difficulty}`);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(requestBody(0)).toEqual({ categoryId: 'geography', difficulty, count: 3, exclude: [] });
+    expect(requestBody(1)).toMatchObject({ categoryId: 'geography', difficulty, count: 7 });
+  });
+
+  test('the quiz header shows the category with the difficulty beside it', async () => {
+    await renderLoadedQuiz('/quiz/geography?difficulty=easy');
+
+    expect(screen.getByText('גאוגרפיה')).toBeOnTheScreen();
+    const level = screen.getByLabelText('רמת קושי: קל');
+    expect(level).toHaveTextContent('קל');
+    // Quieter than the category name.
+    expect(level).toHaveStyle({ color: palette.light.textSecondary });
   });
 
   test('shows a loading state until the first batch arrives', async () => {
@@ -364,7 +386,7 @@ describe('<QuizScreen /> generation', () => {
   });
 
   test('shows a message for an unknown category without calling the API', async () => {
-    await renderQuiz('/quiz/unknown');
+    await renderQuiz('/quiz/unknown?difficulty=medium');
 
     expect(screen.getByRole('header', { name: 'לא מצאנו את הנושא הזה' })).toBeOnTheScreen();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -375,13 +397,13 @@ describe('<QuizScreen /> played-question history', () => {
   test('questions are recorded once they join the quiz', async () => {
     const { respond } = await renderWithPendingSecondBatch();
 
-    expect(await recentQuestions('category:geography')).toEqual(
+    expect(await recentQuestions('category:geography:medium')).toEqual(
       firstBatch.map((question) => question.question).reverse(),
     );
 
     await respond(jsonResponse(200, { questions: secondBatch }));
 
-    expect(await recentQuestions('category:geography')).toEqual(
+    expect(await recentQuestions('category:geography:medium')).toEqual(
       geography.map((question) => question.question).reverse(),
     );
   });
@@ -390,35 +412,70 @@ describe('<QuizScreen /> played-question history', () => {
     const { respond } = await renderWithPendingSecondBatch();
     await respond(jsonResponse(502, { error: 'unavailable' }));
 
-    expect(await recentQuestions('category:geography')).toHaveLength(3);
+    expect(await recentQuestions('category:geography:medium')).toHaveLength(3);
   });
 
   test('the next game in the same category excludes the questions of the previous one', async () => {
     await renderLoadedQuiz();
-    await playAnotherGame('/quiz/geography', 'category:geography');
+    await playAnotherGame('/quiz/geography?difficulty=medium', 'category:geography:medium');
 
     const played = geography.map((question) => question.question).reverse();
-    expect(requestBody(0)).toEqual({ categoryId: 'geography', count: 3, exclude: played });
+    expect(requestBody(0)).toEqual({ categoryId: 'geography', difficulty: 'medium', count: 3, exclude: played });
     expect(requestBody(1).exclude).toEqual([
       ...played,
       ...moreGeography.slice(0, 3).map((question) => question.question),
     ]);
   });
 
+  test('another difficulty of the same category keeps its own history', async () => {
+    await renderLoadedQuiz('/quiz/geography?difficulty=easy');
+    await playAnotherGame('/quiz/geography?difficulty=medium', 'category:geography:easy');
+
+    // Easy questions don't hold back the medium game…
+    expect(requestBody(0)).toEqual({ categoryId: 'geography', difficulty: 'medium', count: 3, exclude: [] });
+    expect(await recentQuestions('category:geography:medium')).toEqual(
+      moreGeography.map((question) => question.question).reverse(),
+    );
+    // …and the medium game leaves the easy history as it was.
+    expect(await recentQuestions('category:geography:easy')).toEqual(
+      geography.map((question) => question.question).reverse(),
+    );
+  });
+
+  test('returning to a difficulty excludes what was played at that difficulty only', async () => {
+    await renderLoadedQuiz('/quiz/geography?difficulty=easy');
+    await playAnotherGame('/quiz/geography?difficulty=medium', 'category:geography:easy');
+    fetchMock.mockClear();
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => respondByBatch(init, moreGeography.map(
+      (question) => ({ ...question, question: `שלישי: ${question.question}` }),
+    )));
+
+    await act(async () => appRouter.replace('/'));
+    await act(async () => appRouter.push('/quiz/geography?difficulty=easy'));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    expect(requestBody(0)).toEqual({
+      categoryId: 'geography',
+      difficulty: 'easy',
+      count: 3,
+      exclude: geography.map((question) => question.question).reverse(),
+    });
+  });
+
   test('another category does not receive this category’s history', async () => {
     await renderLoadedQuiz();
-    await playAnotherGame('/quiz/technology', 'category:geography');
+    await playAnotherGame('/quiz/technology?difficulty=medium', 'category:geography:medium');
 
-    expect(requestBody(0)).toEqual({ categoryId: 'technology', count: 3, exclude: [] });
+    expect(requestBody(0)).toEqual({ categoryId: 'technology', difficulty: 'medium', count: 3, exclude: [] });
   });
 
   test('football and sports keep separate histories', async () => {
-    await renderLoadedQuiz('/quiz/football');
-    await playAnotherGame('/quiz/sports', 'category:football');
+    await renderLoadedQuiz('/quiz/football?difficulty=medium');
+    await playAnotherGame('/quiz/sports?difficulty=medium', 'category:football:medium');
 
-    expect(requestBody(0)).toEqual({ categoryId: 'sports', count: 3, exclude: [] });
-    expect(await recentQuestions('category:sports')).toHaveLength(10);
-    expect(await recentQuestions('category:football')).toEqual(
+    expect(requestBody(0)).toEqual({ categoryId: 'sports', difficulty: 'medium', count: 3, exclude: [] });
+    expect(await recentQuestions('category:sports:medium')).toHaveLength(10);
+    expect(await recentQuestions('category:football:medium')).toEqual(
       geography.map((question) => question.question).reverse(),
     );
   });
@@ -539,19 +596,25 @@ describe('<QuizScreen /> gameplay', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'לתוצאות' }));
 
     expect(router.getPathname()).toBe('/results');
-    expect(router.getSearchParams()).toEqual({ categoryId: 'geography', track: '1011011011' });
+    expect(router.getSearchParams()).toEqual({ categoryId: 'geography', difficulty: 'medium', track: '1011011011' });
     expect(await screen.findByLabelText('7 מתוך 10')).toBeOnTheScreen();
     expect(screen.getByText('גאוגרפיה')).toBeOnTheScreen();
+    expect(screen.getByLabelText('רמת קושי: בינוני')).toHaveTextContent('בינוני');
     expect(screen.getByRole('progressbar', { name: '7 תשובות נכונות מתוך 10' })).toBeOnTheScreen();
   });
 });
 
 describe('<QuizScreen /> leaving a game', () => {
-  /** Opens the quiz from the categories screen, so there is a screen to go back to. */
+  /** Opens a medium quiz through the categories and difficulty screens, so there are screens to go back to. */
+  async function openQuiz() {
+    await fireEvent.press(screen.getByRole('button', { name: 'גאוגרפיה' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'בינוני' }));
+  }
+
   async function renderFromCategories() {
     const router = renderQuiz('/categories');
     await router;
-    await fireEvent.press(screen.getByRole('button', { name: 'גאוגרפיה' }));
+    await openQuiz();
     await screen.findByRole('header', { name: geography[0].question });
     return { router };
   }
@@ -563,7 +626,7 @@ describe('<QuizScreen /> leaving a game', () => {
     await act(async () => appRouter.back());
 
     expect(alert).not.toHaveBeenCalled();
-    expect(router.getPathname()).toBe('/categories');
+    expect(router.getPathname()).toBe('/difficulty/geography');
   });
 
   test('going back mid-game asks first, and staying keeps the game', async () => {
@@ -594,7 +657,7 @@ describe('<QuizScreen /> leaving a game', () => {
     expect(leave.text).toBe('לצאת');
     await act(async () => leave.onPress?.());
 
-    expect(router.getPathname()).toBe('/categories');
+    expect(router.getPathname()).toBe('/difficulty/geography');
   });
 
   test('choosing another topic from a mid-game error leaves without asking', async () => {
@@ -634,7 +697,7 @@ describe('<QuizScreen /> leaving a game', () => {
     const held = holdRequest(3);
     const router = renderQuiz('/categories');
     await router;
-    await fireEvent.press(screen.getByRole('button', { name: 'גאוגרפיה' }));
+    await openQuiz();
     expect(await screen.findByText(LOADING_MESSAGE)).toBeOnTheScreen();
     await waitFor(() => expect(held.respond).toBeDefined());
     expect(held.signal?.aborted).toBe(false);
@@ -642,15 +705,15 @@ describe('<QuizScreen /> leaving a game', () => {
     await act(async () => appRouter.back());
 
     expect(held.signal?.aborted).toBe(true);
-    expect(router.getPathname()).toBe('/categories');
+    expect(router.getPathname()).toBe('/difficulty/geography');
 
     await act(async () => held.respond!(jsonResponse(200, { questions: firstBatch })));
 
-    expect(router.getPathname()).toBe('/categories');
+    expect(router.getPathname()).toBe('/difficulty/geography');
     expect(screen.queryByRole('header', { name: geography[0].question })).not.toBeOnTheScreen();
     expect(screen.queryByText(LOADING_MESSAGE)).not.toBeOnTheScreen();
     // The late batch never joined a game: nothing recorded, and no request for the rest.
-    expect(await recentQuestions('category:geography')).toEqual([]);
+    expect(await recentQuestions('category:geography:medium')).toEqual([]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -663,15 +726,15 @@ describe('<QuizScreen /> leaving a game', () => {
     await act(async () => appRouter.back());
 
     expect(held.signal?.aborted).toBe(true);
-    expect(router.getPathname()).toBe('/categories');
+    expect(router.getPathname()).toBe('/difficulty/geography');
 
     await act(async () => held.respond!(jsonResponse(200, { questions: secondBatch })));
 
-    expect(router.getPathname()).toBe('/categories');
+    expect(router.getPathname()).toBe('/difficulty/geography');
     expect(screen.queryByRole('header', { name: geography[0].question })).not.toBeOnTheScreen();
     expect(screen.queryByRole('progressbar')).not.toBeOnTheScreen();
     // Only the first batch, which was played, is recorded.
-    expect(await recentQuestions('category:geography')).toEqual(
+    expect(await recentQuestions('category:geography:medium')).toEqual(
       firstBatch.map((question) => question.question).reverse(),
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -688,5 +751,31 @@ describe('<QuizScreen /> leaving a game', () => {
 
     expect(alert).not.toHaveBeenCalled();
     expect(router.getPathname()).toBe('/results');
+  });
+
+  test('after a finished game, "עוד סיבוב" replays the same level and "נושא אחר" returns to the categories', async () => {
+    const { router } = await renderFromCategories();
+    for (let index = 0; index < 10; index++) {
+      await screen.findByRole('header', { name: geography[index].question });
+      await answerAndContinue(correctAnswer(index));
+    }
+    expect(router.getSearchParams()).toMatchObject({ categoryId: 'geography', difficulty: 'medium' });
+
+    fetchMock.mockClear();
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => respondByBatch(init, moreGeography));
+    await fireEvent.press(await screen.findByRole('button', { name: 'עוד סיבוב' }));
+
+    expect(router.getPathname()).toBe('/quiz/geography');
+    expect(await screen.findByRole('header', { name: moreGeography[0].question })).toBeOnTheScreen();
+    expect(requestBody(0)).toMatchObject({ categoryId: 'geography', difficulty: 'medium', count: 3 });
+    expect(requestBody(0).exclude).toHaveLength(10);
+
+    for (let index = 0; index < 10; index++) {
+      await screen.findByRole('header', { name: moreGeography[index].question });
+      await answerAndContinue(correctAnswer(index));
+    }
+    await fireEvent.press(await screen.findByRole('button', { name: 'נושא אחר' }));
+
+    expect(router.getPathname()).toBe('/categories');
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import type { DifficultyId } from '@/data/difficulties';
 import { addPlayedQuestions, getRecentQuestions, historyScope } from '@/storage/question-history';
 import type { Question } from '@/types/question';
 import { fetchQuizBatch, QuizRequestError, type QuizErrorKind } from '@/utils/quiz-api';
@@ -15,7 +16,7 @@ type GeneratedQuizState =
       status: 'playing';
       /** The questions ready so far; grows to `QUESTIONS_PER_QUIZ`. */
       questions: Question[];
-      /** Recently played questions of this category, sent as exclusions. */
+      /** Recently played questions of this category and difficulty, sent as exclusions. */
       recent: string[];
       /** The request for the rest of the questions. */
       background: Background;
@@ -32,24 +33,27 @@ function appendBatch(questions: readonly Question[], batch: readonly Question[])
 }
 
 /**
- * Loads a freshly generated quiz for the category. The game can start once the
- * first `FIRST_BATCH_SIZE` questions are ready; the rest are requested right
- * away in the background and appended when they arrive. Questions played
- * recently in the same category are excluded, and every question that
- * joins the quiz is recorded in the on-device history.
+ * Loads a freshly generated quiz for the category at the difficulty. The game
+ * can start once the first `FIRST_BATCH_SIZE` questions are ready; the rest are
+ * requested right away in the background and appended when they arrive.
+ * Questions played recently in the same category and difficulty are excluded,
+ * and every question that joins the quiz is recorded in the on-device history.
  */
-export function useGeneratedQuiz(categoryId: string) {
+export function useGeneratedQuiz(categoryId: string, difficulty: DifficultyId) {
   const [game, setGame] = useState(0);
   const [state, setState] = useState<GeneratedQuizState>({ status: 'loading' });
 
   // The first batch: starts (or restarts) the game.
   useEffect(() => {
     const controller = new AbortController();
-    const scope = historyScope(categoryId);
+    const scope = historyScope(categoryId, difficulty);
 
     (async () => {
       const recent = await getRecentQuestions(scope);
-      const batch = await fetchQuizBatch({ categoryId, count: FIRST_BATCH_SIZE, exclude: recent }, controller.signal);
+      const batch = await fetchQuizBatch(
+        { categoryId, difficulty, count: FIRST_BATCH_SIZE, exclude: recent },
+        controller.signal,
+      );
       if (controller.signal.aborted) return;
       setState({ status: 'playing', questions: appendBatch([], batch), recent, background: { status: 'loading' } });
       void addPlayedQuestions(scope, batch.map((question) => question.question));
@@ -58,7 +62,7 @@ export function useGeneratedQuiz(categoryId: string) {
     });
 
     return () => controller.abort();
-  }, [categoryId, game]);
+  }, [categoryId, difficulty, game]);
 
   // The rest of the questions, requested as soon as the game starts (and again on retry).
   const loadingRest = state.status === 'playing' && state.background.status === 'loading';
@@ -68,10 +72,11 @@ export function useGeneratedQuiz(categoryId: string) {
   useEffect(() => {
     if (!loadingRest || !questions || !recent) return;
     const controller = new AbortController();
-    const scope = historyScope(categoryId);
+    const scope = historyScope(categoryId, difficulty);
     const exclude = [...recent, ...questions.map((question) => question.question)];
+    const count = QUESTIONS_PER_QUIZ - questions.length;
 
-    fetchQuizBatch({ categoryId, count: QUESTIONS_PER_QUIZ - questions.length, exclude }, controller.signal).then(
+    fetchQuizBatch({ categoryId, difficulty, count, exclude }, controller.signal).then(
       (batch) => {
         if (controller.signal.aborted) return;
         setState({ status: 'playing', questions: appendBatch(questions, batch), recent, background: { status: 'done' } });
@@ -84,7 +89,7 @@ export function useGeneratedQuiz(categoryId: string) {
     );
 
     return () => controller.abort();
-  }, [loadingRest, questions, recent, categoryId]);
+  }, [loadingRest, questions, recent, categoryId, difficulty]);
 
   const retry = () => {
     if (state.status === 'playing') {

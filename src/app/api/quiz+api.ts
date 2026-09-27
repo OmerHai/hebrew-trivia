@@ -1,5 +1,7 @@
 import { findCategory } from '@/data/categories';
+import { findDifficulty } from '@/data/difficulties';
 import { categoryGenerationContexts, reasoningEffortFor } from '@/server/category-prompts';
+import { difficultyGuidanceFor } from '@/server/difficulty-prompts';
 import {
   generateQuizBatch,
   QuizGenerationError,
@@ -16,10 +18,11 @@ import {
 const STATUS_BY_FAILURE = { refused: 422, unavailable: 502, misconfigured: 500 } as const;
 
 /**
- * POST /api/quiz with `{ categoryId }` or `{ topic }`, plus `count` (questions
- * to generate) and `exclude` (questions that must not repeat). The app only
- * sends a category id; its generation context is looked up here and never
- * taken from the request. Free-text topics are not offered in the app for now.
+ * POST /api/quiz with `{ categoryId }` or `{ topic }`, plus `difficulty`
+ * (`easy` or `medium`), `count` (questions to generate) and `exclude`
+ * (questions that must not repeat). The app only sends a category id and a
+ * difficulty id; their generation guidance is looked up here and never taken
+ * from the request. Free-text topics are not offered in the app for now.
  * Responds with `{ questions }`, or `{ error }` holding a short error code — never raw details.
  */
 export async function POST(request: Request) {
@@ -49,6 +52,9 @@ async function readOptions(request: Request): Promise<QuizBatchOptions | null> {
   const subject = readSubject(body);
   if (!subject) return null;
 
+  const difficulty = findDifficulty('difficulty' in body ? body.difficulty : undefined);
+  if (!difficulty) return null;
+
   const count = 'count' in body ? body.count : undefined;
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 1 || count > QUESTIONS_PER_QUIZ) {
     return null;
@@ -63,7 +69,15 @@ async function readOptions(request: Request): Promise<QuizBatchOptions | null> {
     return null;
   }
 
-  return { subject, count, exclude: (exclude as string[]).map((item) => item.trim()).filter(Boolean) };
+  return {
+    subject,
+    difficulty: {
+      id: difficulty.id,
+      guidance: difficultyGuidanceFor(difficulty.id, 'categoryId' in subject ? subject.categoryId : undefined),
+    },
+    count,
+    exclude: (exclude as string[]).map((item) => item.trim()).filter(Boolean),
+  };
 }
 
 function readSubject(body: object): QuizSubject | null {
