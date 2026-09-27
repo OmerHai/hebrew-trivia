@@ -1,7 +1,11 @@
 import { findCategory } from '@/data/categories';
 import { findDifficulty } from '@/data/difficulties';
 import { categoryGenerationContexts, reasoningEffortFor } from '@/server/category-prompts';
-import { difficultyGuidanceFor, difficultyMinimumReasoningEfforts } from '@/server/difficulty-prompts';
+import {
+  difficultyGuidanceFor,
+  difficultyMinimumReasoningEfforts,
+  verifiedDifficulties,
+} from '@/server/difficulty-prompts';
 import {
   generateQuizBatch,
   QuizGenerationError,
@@ -75,6 +79,7 @@ async function readOptions(request: Request): Promise<QuizBatchOptions | null> {
       id: difficulty.id,
       guidance: difficultyGuidanceFor(difficulty.id, 'categoryId' in subject ? subject.categoryId : undefined),
       minimumReasoningEffort: difficultyMinimumReasoningEfforts[difficulty.id],
+      verify: verifiedDifficulties.has(difficulty.id),
     },
     count,
     exclude: (exclude as string[]).map((item) => item.trim()).filter(Boolean),

@@ -44,6 +44,13 @@ export const difficultyMinimumReasoningEfforts: Partial<Record<DifficultyId, Rea
   hard: 'low',
 };
 
+/**
+ * Levels whose questions a second call fact-checks before they reach the
+ * player (see `quiz-verifier.ts`). Easy and medium ask about familiar facts
+ * and stay fast.
+ */
+export const verifiedDifficulties: ReadonlySet<DifficultyId> = new Set<DifficultyId>(['hard']);
+
 /** The difficulty guidance for a category, or for a free-text topic when `categoryId` is omitted. */
 export function difficultyGuidanceFor(difficulty: DifficultyId, categoryId?: string): string {
   const guidance = categoryId === 'logic-puzzles' ? logicPuzzleDifficultyGuidance : triviaDifficultyGuidance;
